@@ -42,3 +42,10 @@ jobs:
           make -j2
           test -s out/klipper.bin
           ls -lh out/klipper.bin
+
+      - name: Upload firmware artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: klipper-stm32f407-uart5
+          path: upstream-klipper/out/klipper.bin
+          if-no-files-found: error
