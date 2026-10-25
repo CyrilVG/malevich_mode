@@ -1,0 +1,31 @@
+diff --git a/src/stm32/Kconfig b/src/stm32/Kconfig
+--- a/src/stm32/Kconfig
++++ b/src/stm32/Kconfig
+@@ -427,6 +427,10 @@
+         bool "Serial (on USART3 PD9/PD8)" if LOW_LEVEL_OPTIONS
+         depends on !MACH_STM32F0 && !MACH_STM32F401
+         select SERIAL
++    config STM32_SERIAL_UART5_PC12_PD2
++        bool "Serial (on UART5 PD2/PC12)" if LOW_LEVEL_OPTIONS
++        depends on MACH_STM32F407
++        select SERIAL
+     config STM32_SERIAL_USART3_ALT_PC11_PC10
+         bool "Serial (on USART3 PC11/PC10)" if LOW_LEVEL_OPTIONS
+         depends on MACH_STM32G474
+diff --git a/src/stm32/serial.c b/src/stm32/serial.c
+--- a/src/stm32/serial.c
++++ b/src/stm32/serial.c
+@@ -54,6 +54,13 @@
+   #define GPIO_AF_MODE 7
+   #define USARTx USART3
+   #define USARTx_IRQn USART3_IRQn
++#elif CONFIG_STM32_SERIAL_UART5_PC12_PD2
++  DECL_CONSTANT_STR("RESERVE_PINS_serial", "PD2,PC12");
++  #define GPIO_Rx GPIO('D', 2)
++  #define GPIO_Tx GPIO('C', 12)
++  #define GPIO_AF_MODE 8
++  #define USARTx UART5
++  #define USARTx_IRQn UART5_IRQn
+ #elif CONFIG_STM32_SERIAL_USART6
+   DECL_CONSTANT_STR("RESERVE_PINS_serial", "PA12,PA11");
+   #define GPIO_Rx GPIO('A', 12)

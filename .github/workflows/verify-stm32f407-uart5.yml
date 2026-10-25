@@ -1,0 +1,51 @@
+name: Validate STM32F407 UART5 patch
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  firmware-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout patch repository
+        uses: actions/checkout@v4
+      - name: Checkout pinned Klipper upstream
+        uses: actions/checkout@v4
+        with:
+          repository: Klipper3d/klipper
+          ref: ee2c6fb6b00b2b5d097ef70d0868df7d74943b51
+          path: upstream-klipper
+      - name: Install ARM toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-none-eabi libnewlib-arm-none-eabi
+      - name: Apply patch, configure and build
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd upstream-klipper
+          git apply --check ../patches/0001-klipper-stm32f407-uart5-pc12-pd2.patch
+          git apply ../patches/0001-klipper-stm32f407-uart5-pc12-pd2.patch
+          printf '%s\n' \
+            'CONFIG_LOW_LEVEL_OPTIONS=y' \
+            'CONFIG_MACH_STM32=y' \
+            'CONFIG_MACH_STM32F407=y' \
+            'CONFIG_STM32_FLASH_START_0000=y' \
+            'CONFIG_STM32_CLOCK_REF_25M=y' \
+            'CONFIG_STM32_SERIAL_UART5_PC12_PD2=y' \
+            'CONFIG_SERIAL_BAUD=250000' > .config
+          make olddefconfig
+          grep -qx 'CONFIG_STM32_SERIAL_UART5_PC12_PD2=y' .config
+          grep -qx 'CONFIG_MACH_STM32F407=y' .config
+          grep -qx 'CONFIG_SERIAL_BAUD=250000' .config
+          make -j2
+          test -s out/klipper.bin
+          ls -lh out/klipper.bin
+
+      - name: Upload firmware artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: klipper-stm32f407-uart5
+          path: upstream-klipper/out/klipper.bin
+          if-no-files-found: error
