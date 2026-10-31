@@ -53,10 +53,10 @@ STM32F407 firmware for the on-board FT232R serial interface (UART5, PC12 TX / PD
 
 **Power:** USB power to the FT232R does not power the STM32 board; external power is required.
 
-**Flashing:** Use SWD and write `$BASE.bin` at address `0x08000000`.
+**Flashing:** Use SWD and write $BASE.bin at address 0x08000000.
 
 **Downloads:** A raw firmware binary, a ZIP archive (including firmware, MCU dictionary and build information), and SHA-256/MD5 checksum files.
 
-Verify files with `sha256sum -c SHA256SUMS.txt` or `Get-FileHash -Algorithm SHA256` on Windows. MD5 is included for compatibility; prefer SHA-256.
+Verify files with sha256sum -c SHA256SUMS.txt or Get-FileHash -Algorithm SHA256 on Windows. MD5 is included for compatibility; prefer SHA-256.
 EOF
 echo "Release package ready: $BASE"
