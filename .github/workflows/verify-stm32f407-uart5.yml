@@ -61,6 +61,10 @@ jobs:
           VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || 'v0.1.0' }}
         run: |
           bash scripts/package-firmware.sh "$VERSION" upstream-klipper/out dist
+          grep -q '^## Русский$' README.md
+          grep -q '^## English$' README.md
+          grep -q '^## Русский$' dist/RELEASE_NOTES.md
+          grep -q '^## English$' dist/RELEASE_NOTES.md
       - name: Upload CI artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -80,7 +84,8 @@ jobs:
         run: |
           set -euo pipefail
           if gh release view "$VERSION" >/dev/null 2>&1; then
-            echo "::notice::Release $VERSION already exists; leaving assets unchanged."
+            gh release edit "$VERSION" --notes-file dist/RELEASE_NOTES.md
+            echo "::notice::Updated release notes for $VERSION; existing binaries and checksum assets unchanged."
             exit 0
           fi
           # Tag a snapshot of the current source tree without parent history.
