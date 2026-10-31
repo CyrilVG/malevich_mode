@@ -1,4 +1,4 @@
-name: Validate STM32F407 UART5 patch
+name: STM32F407 firmware
 
 on:
   push:
@@ -8,9 +8,9 @@ jobs:
   firmware-build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout patch repository
+      - name: Checkout project
         uses: actions/checkout@v4
-      - name: Checkout pinned Klipper upstream
+      - name: Checkout Klipper
         uses: actions/checkout@v4
         with:
           repository: Klipper3d/klipper
@@ -20,13 +20,15 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-arm-none-eabi libnewlib-arm-none-eabi
-      - name: Apply patch, configure and build
+      - name: Apply patches and build
         shell: bash
         run: |
           set -euo pipefail
           cd upstream-klipper
-          git apply --check ../patches/0001-klipper-stm32f407-uart5-pc12-pd2.patch
-          git apply ../patches/0001-klipper-stm32f407-uart5-pc12-pd2.patch
+          for patch in ../patches/*.patch; do
+            git apply --check "$patch"
+            git apply "$patch"
+          done
           printf '%s\n' \
             'CONFIG_LOW_LEVEL_OPTIONS=y' \
             'CONFIG_MACH_STM32=y' \
@@ -36,16 +38,18 @@ jobs:
             'CONFIG_STM32_SERIAL_UART5_PC12_PD2=y' \
             'CONFIG_SERIAL_BAUD=250000' > .config
           make olddefconfig
-          grep -qx 'CONFIG_STM32_SERIAL_UART5_PC12_PD2=y' .config
           grep -qx 'CONFIG_MACH_STM32F407=y' .config
+          grep -qx 'CONFIG_STM32_SERIAL_UART5_PC12_PD2=y' .config
           grep -qx 'CONFIG_SERIAL_BAUD=250000' .config
           make -j2
           test -s out/klipper.bin
-          ls -lh out/klipper.bin
-
-      - name: Upload firmware artifact
+          test -s out/klipper.dict
+          python3 ../scripts/verify-mcu-build.py out/klipper.dict
+      - name: Publish firmware
         uses: actions/upload-artifact@v4
         with:
           name: klipper-stm32f407-uart5
-          path: upstream-klipper/out/klipper.bin
+          path: |
+            upstream-klipper/out/klipper.bin
+            upstream-klipper/out/klipper.dict
           if-no-files-found: error
