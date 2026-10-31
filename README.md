@@ -57,18 +57,19 @@ make -j"$(nproc)"
 ls -lh out/klipper.bin
 ```
 
-### Запись через SWD (Windows / DAPLink)
+### Как прошить плату (SWD)
 
-На Windows должен быть установлен OpenOCD. Плата должна иметь отдельное питание, а линии SWD — общий GND, PA13/SWDIO и PA14/SWCLK. После копирования `klipper.bin` в `C:\Klipper\klipper.bin` выполните в PowerShell:
+**[Открыть руководство по прошивке](docs/flashing/README.md)** — общая схема подключения, требования к питанию, проверка BIN и устранение ошибок.
 
-```powershell
-$ocd = (Get-ChildItem "C:\OpenOCD" -Filter openocd.exe -Recurse -File | Select-Object -First 1).FullName
-& $ocd -f interface/cmsis-dap.cfg -f target/stm32f4x.cfg -c 'adapter speed 100; program C:/Klipper/klipper.bin verify reset exit 0x08000000'
-```
+| Способ | Пошаговая инструкция |
+|---|---|
+| ST-Link V2/V3 | [ST-Link](docs/flashing/st-link.md) |
+| DAPLink / CMSIS-DAP | [DAPLink](docs/flashing/cmsis-dap.md) — **проверен на этой плате** |
+| Flipper Zero с DAP Link | [Flipper Zero](docs/flashing/flipper-zero.md) |
+| Raspberry Pi напрямую через GPIO | [Raspberry Pi GPIO](docs/flashing/raspberry-pi-gpio.md) |
 
-Если применяется ST-Link, замените `interface/cmsis-dap.cfg` на `interface/stlink.cfg`.
+**Важно:** основная плата STM32 требует отдельного питания; FT232R по USB его не обеспечивает. Для записи используется SWD (PA13/PA14). Снятие RDP Level 1 стирает пользовательскую Flash. Используйте готовый BIN из [Releases](https://github.com/CyrilVG/malevich_mode/releases) с проверкой SHA-256.
 
-**Осторожно с RDP:** снятие защиты Level 1 вызывает стирание пользовательской Flash. Для проверенной платы переход RDP Level 1 → Level 0 уже был выполнен; команда выше не выполняет разблокировку повторно. Встроенный загрузчик STM32 не использует UART5/FT232R для стандартного обновления — SWD оставьте доступным.
 
 ### Klipper на Raspberry Pi
 
@@ -183,18 +184,19 @@ make -j"$(nproc)"
 ls -lh out/klipper.bin
 ```
 
-### Flashing via SWD (Windows / DAPLink)
+### Flashing the board (SWD)
 
-Install OpenOCD on Windows. Supply power to the board separately; connect SWDIO (PA13), SWCLK (PA14), and common GND. Copy the binary to `C:\Klipper\klipper.bin`, then run in PowerShell:
+**[Open the flashing guide](docs/flashing/README.md)** for target pinout, separate power requirements, BIN verification and troubleshooting.
 
-```powershell
-$ocd = (Get-ChildItem "C:\OpenOCD" -Filter openocd.exe -Recurse -File | Select-Object -First 1).FullName
-& $ocd -f interface/cmsis-dap.cfg -f target/stm32f4x.cfg -c 'adapter speed 100; program C:/Klipper/klipper.bin verify reset exit 0x08000000'
-```
+| Method | Step-by-step instructions |
+|---|---|
+| ST-Link V2/V3 | [ST-Link](docs/flashing/st-link.md) |
+| DAPLink / CMSIS-DAP | [DAPLink](docs/flashing/cmsis-dap.md) — **verified on this board** |
+| Flipper Zero with DAP Link | [Flipper Zero](docs/flashing/flipper-zero.md) |
+| Direct Raspberry Pi GPIO SWD | [Raspberry Pi GPIO](docs/flashing/raspberry-pi-gpio.md) |
 
-For ST-Link, replace `interface/cmsis-dap.cfg` with `interface/stlink.cfg`.
+**Important:** the STM32 board needs separate power; FT232R USB does not power it. Firmware is written through SWD (PA13/PA14). Lowering RDP from Level 1 erases existing user Flash. Use the [Releases](https://github.com/CyrilVG/malevich_mode/releases) BIN and verify SHA-256 before flashing.
 
-**RDP warning:** Changing RDP from Level 1 to Level 0 irreversibly erases the existing user Flash. The validated board has already been set to Level 0; the flashing command above does not unlock the MCU again. The ROM bootloader cannot normally update firmware through this UART5/FT232R connection; keep SWD available.
 
 ### Connecting Klipper on Raspberry Pi
 

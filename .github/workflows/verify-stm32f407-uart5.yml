@@ -26,6 +26,15 @@ jobs:
           repository: Klipper3d/klipper
           ref: ee2c6fb6b00b2b5d097ef70d0868df7d74943b51
           path: upstream-klipper
+      - name: Validate SWD flashing guides
+        shell: bash
+        run: |
+          set -euo pipefail
+          for guide in docs/flashing/{README,st-link,cmsis-dap,flipper-zero,raspberry-pi-gpio}.md; do
+            test -s "$guide"
+            grep -q '^## Русский' "$guide"
+            grep -q '^## English' "$guide"
+          done
       - name: Install ARM toolchain and ZIP tools
         run: |
           sudo apt-get update
