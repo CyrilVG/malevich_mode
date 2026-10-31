@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="190" viewBox="0 0 960 190" role="img" aria-labelledby="title desc">
+<title id="title">malevich_mode</title><desc id="desc">Klipper firmware for STM32F407. Geometric black square with orange and blue accents.</desc>
+<rect width="960" height="190" rx="18" fill="#11151d"/>
+<path d="M0 162H960" stroke="#262e3c"/>
+<rect x="48" y="47" width="86" height="86" rx="3" fill="#050608" stroke="#536174" stroke-width="2" transform="rotate(-8 91 90)"/>
+<rect x="113" y="36" width="22" height="22" fill="#ff794a" transform="rotate(12 124 47)"/>
+<path d="M45 140H143" stroke="#72d6e9" stroke-width="4"/>
+<text x="178" y="98" font-family="'DejaVu Sans Mono','Courier New',monospace" font-size="54" font-weight="700" letter-spacing="-2" fill="#f5f3ed">malevich<tspan fill="#ff794a">_mode</tspan></text>
+<text x="181" y="132" font-family="'DejaVu Sans',Arial,sans-serif" font-size="14" letter-spacing="3" fill="#a5b5c8">KLIPPER / STM32F407 / OPEN SOURCE</text>
+<circle cx="887" cy="48" r="8" fill="#72d6e9"/>
+<path d="M839 133L896 76" stroke="#ff794a" stroke-width="9"/>
+</svg>

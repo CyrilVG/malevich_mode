@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="60" viewBox="0 0 320 60" role="img" aria-labelledby="title">
+<title id="title">Поддержать на Boosty / Support on Boosty</title>
+<rect x="1" y="1" width="318" height="58" rx="14" fill="#f36536" stroke="#ff976b" stroke-width="2"/>
+<path d="M29 22C22 14 12 26 29 39C46 26 36 14 29 22Z" fill="#fff"/>
+<text x="53" y="27" font-family="'DejaVu Sans',Arial,sans-serif" font-size="16" font-weight="700" fill="#fff">Поддержать на Boosty</text>
+<text x="54" y="44" font-family="'DejaVu Sans',Arial,sans-serif" font-size="10" letter-spacing="1.5" fill="#fff">SUPPORT THE PROJECT</text>
+<path d="M285 24L292 30L285 36M279 30H292" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
