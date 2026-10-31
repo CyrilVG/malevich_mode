@@ -1,0 +1,98 @@
+name: STM32F407 firmware
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version (vMAJOR.MINOR.PATCH)
+        type: string
+        required: true
+        default: v0.1.0
+
+permissions:
+  contents: write
+
+jobs:
+  firmware-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v4
+      - name: Checkout Klipper
+        uses: actions/checkout@v4
+        with:
+          repository: Klipper3d/klipper
+          ref: ee2c6fb6b00b2b5d097ef70d0868df7d74943b51
+          path: upstream-klipper
+      - name: Install ARM toolchain and ZIP tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-none-eabi libnewlib-arm-none-eabi zip unzip
+      - name: Apply patches and build
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd upstream-klipper
+          for patch in ../patches/*.patch; do
+            git apply --check "$patch"
+            git apply "$patch"
+          done
+          printf '%s\n' \
+            'CONFIG_LOW_LEVEL_OPTIONS=y' \
+            'CONFIG_MACH_STM32=y' \
+            'CONFIG_MACH_STM32F407=y' \
+            'CONFIG_STM32_FLASH_START_0000=y' \
+            'CONFIG_STM32_CLOCK_REF_25M=y' \
+            'CONFIG_STM32_SERIAL_UART5_PC12_PD2=y' \
+            'CONFIG_SERIAL_BAUD=250000' > .config
+          make olddefconfig
+          grep -qx 'CONFIG_MACH_STM32F407=y' .config
+          grep -qx 'CONFIG_STM32_SERIAL_UART5_PC12_PD2=y' .config
+          grep -qx 'CONFIG_SERIAL_BAUD=250000' .config
+          make -j2
+          test -s out/klipper.bin
+          test -s out/klipper.dict
+          python3 ../scripts/verify-mcu-build.py out/klipper.dict
+      - name: Package and verify downloads
+        shell: bash
+        env:
+          VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || 'v0.1.0' }}
+        run: |
+          bash scripts/package-firmware.sh "$VERSION" upstream-klipper/out dist
+      - name: Upload CI artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: klipper-stm32f407-uart5
+          path: |
+            dist/*.bin
+            dist/*.zip
+            dist/*SUMS.txt
+            dist/RELEASE_NOTES.md
+          if-no-files-found: error
+      - name: Publish verified release
+        if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || 'v0.1.0' }}
+        run: |
+          set -euo pipefail
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            echo "::notice::Release $VERSION already exists; leaving assets unchanged."
+            exit 0
+          fi
+          # Tag a snapshot of the current source tree without parent history.
+          if ! git ls-remote --exit-code --tags origin "refs/tags/$VERSION" >/dev/null 2>&1; then
+            ROOT_TREE="$(git write-tree)"
+            ROOT_SHA="$(git -c user.name=malevich_mode -c user.email=actions@users.noreply.github.com commit-tree "$ROOT_TREE" -m "malevich_mode $VERSION")"
+            git push origin "$ROOT_SHA:refs/tags/$VERSION"
+          fi
+          gh release create "$VERSION" \
+            dist/malevich_mode-stm32f407-"$VERSION".bin \
+            dist/malevich_mode-stm32f407-"$VERSION".zip \
+            dist/SHA256SUMS.txt dist/MD5SUMS.txt \
+            --verify-tag \
+            --title "malevich_mode $VERSION — STM32F407" \
+            --notes-file dist/RELEASE_NOTES.md
