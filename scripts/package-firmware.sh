@@ -47,16 +47,34 @@ EOF
   cmp "$BASE.bin" <(unzip -p "$BASE.zip" klipper.bin)
 )
 cat > "$DIST_DIR/RELEASE_NOTES.md" <<EOF
-## malevich_mode $VERSION
+## Русский
 
-STM32F407 firmware for the on-board FT232R serial interface (UART5, PC12 TX / PD2 RX, 250000 baud).
+### malevich_mode $VERSION — STM32F407
 
-**Power:** USB power to the FT232R does not power the STM32 board; external power is required.
+Прошивка Klipper для платы STM32F407 со штатным USB-UART FT232R: UART5, TX PC12 / RX PD2, 250000 бод.
 
-**Flashing:** Use SWD and write $BASE.bin at address 0x08000000.
+**Питание:** USB питает FT232R, но не основную плату с STM32. Необходимо отдельно подать штатное питание.
 
-**Downloads:** A raw firmware binary, a ZIP archive (including firmware, MCU dictionary and build information), and SHA-256/MD5 checksum files.
+**Прошивка:** записывайте файл $BASE.bin через SWD по адресу 0x08000000.
 
-Verify files with sha256sum -c SHA256SUMS.txt or Get-FileHash -Algorithm SHA256 on Windows. MD5 is included for compatibility; prefer SHA-256.
+**Файлы:** готовый BIN, ZIP с прошивкой, словарём MCU и параметрами сборки, а также SHA256SUMS.txt и MD5SUMS.txt.
+
+**Проверка:** в Linux — sha256sum -c SHA256SUMS.txt, в Windows PowerShell — Get-FileHash -Algorithm SHA256. MD5 предоставлен дополнительно для совместимости.
+
+---
+
+## English
+
+### malevich_mode $VERSION — STM32F407
+
+Klipper firmware for the STM32F407 board using its on-board FT232R USB-to-serial interface: UART5, PC12 TX / PD2 RX, 250000 baud.
+
+**Power:** USB powers the FT232R but does not power the STM32 board. A separate, appropriate power supply is required.
+
+**Flashing:** write $BASE.bin via SWD at address 0x08000000.
+
+**Downloads:** raw BIN, ZIP with firmware, MCU dictionary and build information, plus SHA256SUMS.txt and MD5SUMS.txt.
+
+**Verification:** run sha256sum -c SHA256SUMS.txt on Linux, or Get-FileHash -Algorithm SHA256 in Windows PowerShell. MD5 is provided for compatibility; SHA-256 is preferred.
 EOF
 echo "Release package ready: $BASE"
