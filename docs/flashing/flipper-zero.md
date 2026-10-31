@@ -6,7 +6,7 @@
 
 ### 1. Подготовка Flipper
 
-1. Установите официальное приложение [DAP Link из Flipper Lab](https://lab.flipper.net/apps/dap_link) (раздел GPIO), при необходимости обновите прошивку Flipper и вставьте карту microSD.
+1. Установите приложение [DAP Link из каталога Flipper Lab](https://lab.flipper.net/apps/dap_link) (раздел GPIO), при необходимости обновите прошивку Flipper и вставьте карту microSD.
 2. На Flipper откройте **Apps → GPIO → DAP Link** и запустите его.
 3. Откройте меню приложения **Config → Help and Pinout** и **сверьте актуальные GPIO**. Обычно: Flipper **pin 10 → SWCLK**, **pin 12 → SWDIO**, **pin 11 → GND**. Конфигурация приложения может быть изменена пользователем.
 4. При выключенном питании соедините линии с STM32: SWCLK → PA14, SWDIO → PA13, GND → GND. Подайте отдельное штатное питание платы.

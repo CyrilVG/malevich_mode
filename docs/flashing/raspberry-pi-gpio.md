@@ -33,7 +33,13 @@ grep -E 'adapter gpio (swclk|swdio)' /usr/share/openocd/scripts/interface/raspbe
 
 **Если этих конфигов нет или они показывают другие GPIO, не подключайте по приведённой таблице вслепую.** Установите актуальный OpenOCD с соответствующими интерфейсными скриптами или адаптируйте проводку только после изучения имеющейся конфигурации.
 
-Скопируйте скачанный и проверенный BIN на Raspberry Pi под именем **~/klipper.bin**. Например, через scp с ПК; не скачивайте приватный Release без GitHub-аутентификации.
+Скопируйте скачанный и проверенный BIN на Raspberry Pi под именем **~/klipper.bin**. Например, в Windows PowerShell (поменяйте имя пользователя/хоста на свои):
+
+~~~powershell
+scp .\malevich_mode-stm32f407-v0.1.0.bin pi@raspberrypi.local:~/klipper.bin
+~~~
+
+В новой установке Raspberry Pi OS имя пользователя не обязательно будет pi. Приватный Release требует авторизации GitHub перед скачиванием на ПК.
 
 ### 3. Raspberry Pi 0/1/2/3/4 / Zero: bcm2835gpio
 
@@ -115,7 +121,13 @@ grep -E 'adapter gpio (swclk|swdio)' /usr/share/openocd/scripts/interface/raspbe
 
 If these scripts are missing or show different GPIOs, **do not blindly use the wiring table**. Update OpenOCD or follow the wiring explicitly documented by the installed scripts.
 
-Transfer a release BIN to the Pi and name it **~/klipper.bin**.
+Transfer the verified release BIN to your Pi as **~/klipper.bin**, for example from Windows PowerShell (replace the username/hostname):
+
+~~~powershell
+scp .\malevich_mode-stm32f407-v0.1.0.bin pi@raspberrypi.local:~/klipper.bin
+~~~
+
+The Pi username is not necessarily pi. Downloading a private GitHub Release requires authentication.
 
 ### 3. Raspberry Pi 0–4 / Zero: native GPIO
 
