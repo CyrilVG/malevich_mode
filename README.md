@@ -79,7 +79,7 @@ ls -l /dev/serial/by-id/
 Для проверенного экземпляра в `printer.cfg`:
 
 ```ini
-[mcu picaso]
+[mcu board]
 serial: /dev/serial/by-id/usb-FTDI_FT232R_USB_UART_A9WERABX-if00-port0
 baud: 250000
 ```
@@ -91,7 +91,7 @@ sudo systemctl restart klipper
 tail -n 80 ~/printer_data/logs/klippy.log
 ```
 
-Успешное соединение подтверждено в Mainsail как `mcu picaso (stm32f407xx)`, **168 MHz**.
+После подачи отдельного питания Mainsail успешно распознаёт `stm32f407xx` с частотой **168 MHz**. Имя секции `[mcu board]` является примером; при использовании другого имени обновите соответствующие ссылки в `printer.cfg`.
 
 ## Готовые прошивки
 
