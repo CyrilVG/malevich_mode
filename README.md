@@ -1,98 +1,125 @@
-# picaso_jailbreak — Klipper / STM32F407 / UART5
+# malevich_mode — Klipper / STM32F407 / UART5
 
-Патч к [официальному Klipper](https://github.com/Klipper3d/klipper), добавляющий UART5 на **PC12 (TX) / PD2 (RX)** в `make menuconfig` для STM32F407.
+Проект **malevich_mode** (ранее **picaso_jailbreak**) содержит патчи к [официальному Klipper](https://github.com/Klipper3d/klipper) для платы на STM32F407. Плата успешно запущена с UART5 через штатный USB-UART FT232R.
 
-## Аппаратная конфигурация
+В сборке MCU дополнительно отображается фирменная подпись **` [malevich_mode_tg:@Cyril_VG]`**, причём штатный номер версии Klipper сохраняется.
 
-| Устройство | Сигнал |
+## Подтверждённая аппаратная конфигурация
+
+| Компонент | Конфигурация / проверка |
 |---|---|
-| STM32F407 (LQFP100) | 168 MHz, SWD PA13/PA14 |
-| FT232R RX | STM32 **PC12 / UART5_TX**, вывод корпуса 80 |
-| FT232R TX | STM32 **PD2 / UART5_RX**, вывод корпуса 54 |
-| Соединение хоста | FT232R → USB Raspberry Pi (`/dev/ttyUSB0` или `/dev/serial/by-id/...`) |
-| Прошивка | ST-Link V2/V2+ → SWD |
-| Уровни UART | 3,3 В |
-| Bootloader offset | No bootloader, адрес `0x08000000` |
+| MCU | STM32F407xx (Klipper), SWD Device ID `0x413`, ревизия `0x1007` |
+| Корпус | LQFP100 |
+| Flash | **512 KiB** — определено OpenOCD после снятия RDP |
+| Частота ядра | **168 MHz** — видна в Mainsail |
+| Внешний кварц | **25 MHz**, подтверждено маркировкой кварца на плате |
+| FT232R RX | STM32 `PC12` (UART5_TX), ножка 80 |
+| FT232R TX | STM32 `PD2` (UART5_RX), ножка 54 |
+| UART | UART5, AF8, **250000 бод** |
+| SWD | `PA13` (SWDIO), `PA14` (SWCLK), GND; питание отдельно |
+| Программатор | **DAPLink (CMSIS-DAP)**, проверено с OpenOCD; ST-Link тоже подходит |
+| Прошивка | No bootloader, начало Flash `0x08000000` |
 
-**Важно:** 25 MHz HSE выбран на основании ранее сохранённого `.config`, но его необходимо проверить на аппаратной плате до прошивки. `Device ID 0x413` сам по себе не уточняет артикул F405/F407/F415/F417. Параметр `CONFIG_FLASH_SIZE=0x80000` — стандартное значение сборки Klipper, а не подтверждённая ёмкость Flash данного экземпляра.
+**Особенность питания платы:** штатный USB-разъём обслуживает FT232R, но **не подаёт питание на основную плату STM32**. При подключении только USB адаптер появляется как `/dev/ttyUSB0`, однако MCU не запускается. Для работы **необходимо отдельно подать штатное питание платы**. Это подтверждено в реальной установке Klipper.
 
-## Состав изменений
+Заводская защита RDP Level 1 была снята (со стиранием старой Flash), далее Klipper прошит через SWD с успешной проверкой `Verified OK`. При наличии отдельного питания Mainsail успешно обнаружил `mcu picaso (stm32f407xx)` на 168 MHz.
 
-Патч [`patches/0001-klipper-stm32f407-uart5-pc12-pd2.patch`](patches/0001-klipper-stm32f407-uart5-pc12-pd2.patch):
-- добавляет `STM32_SERIAL_UART5_PC12_PD2` в `src/stm32/Kconfig` (только STM32F407, при `LOW_LEVEL_OPTIONS=y`);
-- задаёт `GPIO_AF_MODE 8`, `GPIO_Tx PC12`, `GPIO_Rx PD2`, `UART5` и `UART5_IRQn` в `src/stm32/serial.c`;
-- использует штатный драйвер serial Klipper без альтернативного загрузчика и без изменения других UART.
+## Патчи
 
-Проверяемая версия upstream: **Klipper `ee2c6fb6b00b2b5d097ef70d0868df7d74943b51` (2026-10-21)**. При обновлении Klipper патч требуется проверять повторно.
+1. [`patches/0001-klipper-stm32f407-uart5-pc12-pd2.patch`](patches/0001-klipper-stm32f407-uart5-pc12-pd2.patch) — добавляет в `src/stm32/Kconfig` пункт `Serial (on UART5 PD2/PC12)` (только STM32F407 при `LOW_LEVEL_OPTIONS=y`); настраивает PC12/PD2, AF8, UART5 и `UART5_IRQn` в `src/stm32/serial.c`.
+2. [`patches/0002-klipper-malevich-version-tag.patch`](patches/0002-klipper-malevich-version-tag.patch) — добавляет к версии MCU суффикс ` [malevich_mode_tg:@Cyril_VG]` через штатный параметр `-e` программы `scripts/buildcommands.py` в `Makefile`. Исходный git-хеш, отметка dirty и информация о сборке остаются в версии.
 
-## Как применить к установленному Klipper на Raspberry Pi
+Пример отображения после перепрошивки:
+
+```text
+mcu picaso (stm32f407xx)
+Version: ee2c6fb-dirty-20261025_164829-runner [malevich_mode_tg:@Cyril_VG]
+Freq: 168 MHz
+```
+
+Реальные git-хеш, время сборки и hostname могут отличаться. Суффикс появляется **только после сборки и прошивки нового `klipper.bin`**; изменение README или `printer.cfg` на уже прошитом MCU его не добавляет.
+
+Патчи проверяются по закреплённому коммиту официального Klipper: **`ee2c6fb6b00b2b5d097ef70d0868df7d74943b51`** (21.10.2026). При обновлении upstream необходимо заново проверить применимость патчей и сборку.
+
+## Применение на Raspberry Pi
 
 ```bash
-# Загрузить этот репозиторий (для приватного репозитория потребуется доступ GitHub)
-git clone git@github.com:CyrilVG/picaso_jailbreak.git ~/picaso_jailbreak
+git clone git@github.com:CyrilVG/malevich_mode.git ~/malevich_mode
 
 cd ~/klipper
-git status --short                  # убедиться, что нет конфликтующих локальных изменений
-git apply --check ~/picaso_jailbreak/patches/0001-klipper-stm32f407-uart5-pc12-pd2.patch
-git apply ~/picaso_jailbreak/patches/0001-klipper-stm32f407-uart5-pc12-pd2.patch
+git status --short
+git apply --check ~/malevich_mode/patches/0001-klipper-stm32f407-uart5-pc12-pd2.patch
+git apply ~/malevich_mode/patches/0001-klipper-stm32f407-uart5-pc12-pd2.patch
+git apply --check ~/malevich_mode/patches/0002-klipper-malevich-version-tag.patch
+git apply ~/malevich_mode/patches/0002-klipper-malevich-version-tag.patch
 make menuconfig
 ```
 
-В `make menuconfig` выбери:
-1. **Enable extra low-level configuration options**: Yes;
-2. **Micro-controller Architecture**: STMicroelectronics STM32;
-3. **Processor model**: STM32F407;
-4. **Bootloader offset**: No bootloader;
-5. **Clock Reference**: 25 MHz crystal *(только если кварц действительно 25 MHz)*;
-6. **Communication interface**: **Serial (on UART5 PD2/PC12)**;
-7. **Baud rate**: 250000.
+При выборе `make menuconfig` задайте:
+- Enable extra low-level configuration options: **Yes**;
+- Architecture: **STMicroelectronics STM32**; Processor: **STM32F407**;
+- Bootloader offset: **No bootloader**;
+- Clock Reference: **25 MHz crystal**;
+- Communication interface: **Serial (on UART5 PD2/PC12)**; baud: **250000**.
 
-Далее:
+Сборка и проверка встроенного тега:
 
 ```bash
 make olddefconfig
-grep -E 'CONFIG_MACH_STM32F407=|CONFIG_STM32_SERIAL_UART5_PC12_PD2=|CONFIG_SERIAL_BAUD=|CONFIG_CLOCK_REF_FREQ=' .config
 make clean
 make -j"$(nproc)"
+python3 ~/malevich_mode/scripts/check-version-tag.py out/klipper.dict
 ls -lh out/klipper.bin
 ```
 
-## Прошивка и восстановление через SWD
-
-ST-Link: SWDIO ↔ PA13, SWCLK ↔ PA14, GND ↔ GND. Плата должна получать корректное питание, напряжение сигналов 3,3 В. NRST полезен для восстановления.
-
-Если RDP Level 1 активен, его снятие **безвозвратно стирает пользовательскую Flash**. Сначала проверь Option Bytes в STM32CubeProgrammer и не снимай защиту, если заводская прошивка ещё нужна. RDP Level 2 нельзя снять.
-
-При отключённой защите и сохранённом исходном бинарнике можно прошить через STM32CubeProgrammer (ST-Link, адрес `0x08000000`) или OpenOCD:
+Чтобы обновить уже существующий клон старого репозитория после переименования:
 
 ```bash
-cd ~/klipper
-openocd -f interface/stlink.cfg -f target/stm32f4x.cfg \
-  -c "program out/klipper.bin 0x08000000 verify reset exit"
+git -C ~/picaso_jailbreak remote set-url origin git@github.com:CyrilVG/malevich_mode.git
 ```
 
-Наличие Klipper на UART5 **не создаёт UART5-загрузчик**. Для последующих обновлений рекомендуем оставлять SWD подключаемым. Обычный `make flash` через USB FT232R, сидящий на UART5, не гарантирует обновление приложения.
+При этом локальная папка может остаться старой — при применении патчей используйте соответствующий путь.
 
-## Использование в Klipper
+## Прошивка через SWD
 
-Узнай постоянное имя адаптера:
+В Windows с OpenOCD xPack и DAPLink (прошивка должна быть скопирована в `C:\Klipper\klipper.bin`):
+
+```powershell
+$ocd = (Get-ChildItem "C:\OpenOCD" -Filter openocd.exe -Recurse -File | Select-Object -First 1).FullName
+& $ocd -f interface/cmsis-dap.cfg -f target/stm32f4x.cfg -c 'adapter speed 100; program C:/Klipper/klipper.bin verify reset exit 0x08000000'
+```
+
+Прошивка по этому адресу не требует пользовательского загрузчика. Для ST-Link вместо `interface/cmsis-dap.cfg` применяется `interface/stlink.cfg`.
+
+**Внимание:** если MCU защищён RDP Level 1, его снятие стирает старую Flash; RDP Level 2 необратим. У ранее проверенной платы RDP уже переведён в Level 0. Для последующих обновлений `make flash` через UART5/FT232R не заменяет SWD-программатор.
+
+## Подключение Klipper
+
+Проверить постоянное имя USB-UART:
 
 ```bash
 ls -l /dev/serial/by-id/
 ```
 
-В `printer.cfg` укажи **реальный** путь устройства:
+В `printer.cfg` для проверенной платы:
 
 ```ini
-[mcu]
-serial: /dev/serial/by-id/usb-FTDI_...-if00-port0
+[mcu picaso]
+serial: /dev/serial/by-id/usb-FTDI_FT232R_USB_UART_A9WERABX-if00-port0
 baud: 250000
 ```
 
-После сохранения `printer.cfg`: `sudo systemctl restart klipper`. Если соединение отсутствует, проверь физические линии TX/RX, HSE, питание и лог Klipper. PC12/PD2 также задействуются SDIO: параллельно пользоваться SDIO на этих выводах нельзя.
+Проверьте, что путь совпадает с фактическим устройством на Raspberry Pi, и **подайте питание на основную плату**. После этого `sudo systemctl restart klipper`. Выводы PC12/PD2 нельзя одновременно использовать для SDIO.
 
-## Автоматическая проверка
+## CI / готовая прошивка
 
-GitHub Actions применяет патч к закреплённому upstream-коммиту, включает STM32F407 / HSE 25 MHz / UART5 / 250000 и пытается собрать `out/klipper.bin`. После успешной компиляции `klipper.bin` загружается как артефакт **klipper-stm32f407-uart5** на странице GitHub Actions. Успешная компиляция не заменяет аппаратный тест на плате.
+GitHub Actions при push и PR:
+1. загружает закреплённый исходный Klipper;
+2. применяет оба патча с `git apply --check`;
+3. собирает STM32F407 / 25 MHz / UART5 / 250000;
+4. читает `out/klipper.dict` и **проверяет точный суффикс версии**;
+5. публикует `out/klipper.bin` и `out/klipper.dict` в артефакте `klipper-stm32f407-uart5-malevich`.
 
-Лицензия модифицируемого Klipper — GPLv3. Этот репозиторий хранит только патч и документацию, а не форк всего исходного дерева.
+Сборка и проверка версии не заменяют тестирование нового бинарника на плате.
+
+Код Klipper распространяется на условиях GPLv3. В этом репозитории хранятся патчи и документация, а не полная копия исходников.
