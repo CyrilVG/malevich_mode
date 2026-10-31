@@ -93,8 +93,33 @@ tail -n 80 ~/printer_data/logs/klippy.log
 
 Успешное соединение подтверждено в Mainsail как `mcu picaso (stm32f407xx)`, **168 MHz**.
 
+## Готовые прошивки
+
+Файлы доступны в разделе [Releases](https://github.com/CyrilVG/malevich_mode/releases):
+
+- `malevich_mode-stm32f407-vX.Y.Z.bin` — прошивка для записи по SWD с адреса `0x08000000`;
+- `malevich_mode-stm32f407-vX.Y.Z.zip` — архив с `klipper.bin`, `klipper.dict` и параметрами сборки;
+- `SHA256SUMS.txt` и `MD5SUMS.txt` — контрольные суммы обоих файлов.
+
+В Windows PowerShell можно проверить полученный бинарный файл:
+
+```powershell
+Get-FileHash .\malevich_mode-stm32f407-v0.1.0.bin -Algorithm SHA256
+Get-FileHash .\malevich_mode-stm32f407-v0.1.0.bin -Algorithm MD5
+```
+
+Сверьте значения с соответствующими файлами сумм. В Linux:
+
+```bash
+sha256sum -c SHA256SUMS.txt
+md5sum -c MD5SUMS.txt
+unzip -t malevich_mode-stm32f407-v0.1.0.zip
+```
+
+Для проверки целостности рекомендуется SHA-256; MD5 опубликован дополнительно для совместимости.
+
 ## CI и прошивка
 
-GitHub Actions применяет патчи к закреплённому Klipper, выполняет конфигурацию STM32F407 + UART5, собирает прошивку и публикует артефакт **`klipper-stm32f407-uart5`**, содержащий `klipper.bin` и служебный словарь MCU.
+GitHub Actions применяет патчи к закреплённому Klipper, выполняет конфигурацию STM32F407 + UART5, собирает прошивку и публикует проверенные сборки в GitHub Actions, а версии — в разделе Releases.
 
 Компиляция не заменяет аппаратную проверку новой сборки. Код исходного Klipper распространяется по GPLv3; данный репозиторий хранит только патчи, инструкции и проверки.
