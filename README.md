@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="#русский">Русский</a> · <a href="#english">English</a> ·
-  <a href="https://github.com/CyrilVG/malevich_mode/releases">Скачать / Downloads</a> ·
+  <a href="https://github.com/CyrilVG/malevich_mode/releases/latest">Скачать / Downloads</a> ·
   <a href="docs/flashing/README.md">Прошивка / Flashing</a>
 </p>
 
