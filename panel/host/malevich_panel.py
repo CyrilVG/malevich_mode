@@ -15,6 +15,7 @@ class MalevichPanel(DisplayBase):
         self.queue = self.mcu.alloc_command_queue()
         self.mcu.register_config_callback(self.build_config)
         self.running = False
+        self.epoch = None
         self.ack = 0
         self.last_direction = None
         self.last_tick = None
@@ -38,7 +39,7 @@ class MalevichPanel(DisplayBase):
         self.frame_cmd = self.mcu.lookup_command(
             'panel_frame offset=%hu data=%*s', cq=self.queue)
         self.query_cmd = self.mcu.lookup_query_command(
-            'panel_query ack=%u', 'panel_events seq=%u tick=%u data=%*s',
+            'panel_query ack=%u', 'panel_events epoch=%u seq=%u tick=%u data=%*s',
             cq=self.queue)
         self.status_cmd = self.mcu.lookup_query_command(
             'panel_get_status',
@@ -76,6 +77,11 @@ class MalevichPanel(DisplayBase):
                 raise ValueError('Malformed panel events')
             menu = self.printer.lookup_object('menu')
             seq = result['seq']
+            if self.epoch != result['epoch']:
+                # Offline input was deliberately discarded by the MCU.
+                self.epoch = result['epoch']
+                self.ack = seq
+                self.last_tick = self.last_direction = None
             for offset in range(0, len(data), 5):
                 event_seq = (seq + offset // 5) & 0xffffffff
                 if event_seq != self.ack:

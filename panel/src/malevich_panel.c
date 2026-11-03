@@ -19,6 +19,7 @@ static struct timer scan_timer;
 static struct task_wake wake;
 static uint8_t framebuffer[1024];
 static uint32_t frame_mask, tick, heartbeat, shown_at, read_seq, write_seq;
+static uint32_t epoch;
 static uint32_t overflow, invalid, max_scan_ticks, last_scan;
 static uint8_t online, visible, initialized, raw, decoder, steps = 2;
 static uint8_t candidate, button, stable, held, long_sent;
@@ -120,7 +121,7 @@ static uint_fast8_t scan_event(struct timer *t) {
     }
     raw = value;
     if (online && tick - heartbeat >= 2000) {
-        online = 0;
+        online = 0; epoch++;
         if (visible) { visible = 0; dirty = 1; }
         read_seq = write_seq;
     }
@@ -179,6 +180,7 @@ void malevich_panel_task(void) {
 DECL_TASK(malevich_panel_task);
 
 void malevich_panel_shutdown(void) {
+    epoch++;
     online = visible = 0; dirty = 1; drawing = 0;
     frame_mask = 0; read_seq = write_seq; held = 0;
     gpio_out_write(cs, 1); gpio_out_write(dc, 1); gpio_out_write(clk, 0);
@@ -191,6 +193,7 @@ DECL_SHUTDOWN(malevich_panel_shutdown);
 void command_panel_start(uint32_t *args) {
     if (args[0] != 2 && args[0] != 4) shutdown("Invalid panel encoder steps");
     irqstatus_t f = irq_save();
+    epoch++;
     steps = args[0]; contrast = args[1]; invert = !!args[2];
     read_seq = write_seq = 0; frame_mask = 0; decoder = held = 0;
     heartbeat = tick; online = 1;
@@ -220,9 +223,10 @@ void command_panel_query(uint32_t *args) {
         p[0] = e->action;
         for (uint8_t i=0;i<4;i++) p[i+1] = e->tick >> (i*8);
     }
-    uint32_t base = read_seq;
+    uint32_t base = read_seq, generation = epoch;
     irq_restore(f);
-    sendf("panel_events seq=%u tick=%u data=%*s",base,now,count*5,payload);
+    sendf("panel_events epoch=%u seq=%u tick=%u data=%*s",
+          generation,base,now,count*5,payload);
 }
 DECL_COMMAND(command_panel_query, "panel_query ack=%u");
 void command_panel_status(uint32_t *args) {

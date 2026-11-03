@@ -70,6 +70,7 @@ jobs:
         run: |
           gcc -std=gnu11 -O2 -I panel/tests/stubs -o /tmp/test-panel panel/tests/test_panel.c
           /tmp/test-panel
+          python3 panel/tests/test_host.py
           python3 -m compileall -q panel/host panel/install.py
           python3 panel/install.py --klipper upstream-klipper
           python3 panel/install.py --klipper upstream-klipper
