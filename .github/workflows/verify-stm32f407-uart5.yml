@@ -9,7 +9,7 @@ on:
         description: Release version (vMAJOR.MINOR.PATCH)
         type: string
         required: true
-        default: v0.1.0
+        default: v0.2.0
 
 permissions:
   contents: write
@@ -48,6 +48,8 @@ jobs:
             git apply --check "$patch"
             git apply "$patch"
           done
+          cp ../panel/src/malevich_panel.c ../panel/src/malevich_logo.h src/
+          echo 'src-y += malevich_panel.c' >> src/Makefile
           printf '%s\n' \
             'CONFIG_LOW_LEVEL_OPTIONS=y' \
             'CONFIG_MACH_STM32=y' \
@@ -64,12 +66,34 @@ jobs:
           test -s out/klipper.bin
           test -s out/klipper.dict
           python3 ../scripts/verify-mcu-build.py out/klipper.dict
+      - name: Test panel firmware state machine and host installer
+        run: |
+          gcc -std=gnu11 -O2 -I panel/tests/stubs -o /tmp/test-panel panel/tests/test_panel.c
+          /tmp/test-panel
+          python3 -m compileall -q panel/host panel/install.py
+          python3 panel/install.py --klipper upstream-klipper
+          python3 panel/install.py --klipper upstream-klipper
+          python3 -m compileall -q upstream-klipper/klippy/extras/display
+          python3 - <<'PYTEST'
+          import json
+          d = json.load(open('upstream-klipper/out/klipper.dict'))
+          assert d['config']['MALEVICH_PANEL_VERSION'] == 1
+          for prefix in ('panel_start ', 'panel_frame ', 'panel_query ', 'panel_get_status'):
+              assert any(k.startswith(prefix) for k in d['commands']), prefix
+          PYTEST
       - name: Package and verify downloads
         shell: bash
         env:
-          VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || 'v0.1.0' }}
+          VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || 'v0.2.0' }}
         run: |
           bash scripts/package-firmware.sh "$VERSION" upstream-klipper/out dist
+          cp -r panel dist/panel
+          cp upstream-klipper/out/klipper.elf dist/klipper.elf
+          cp upstream-klipper/.config dist/build.config
+          cp upstream-klipper/out/klipper.dict dist/klipper.dict
+          cd dist
+          zip -X -q -r malevich-panel-host-and-source.zip panel build.config klipper.dict
+          cd ..
           grep -q '^## Русский$' README.md
           grep -q '^## English$' README.md
           grep -q '^## Русский$' dist/RELEASE_NOTES.md
@@ -83,30 +107,7 @@ jobs:
             dist/*.zip
             dist/*SUMS.txt
             dist/RELEASE_NOTES.md
+            dist/build.config
+            dist/klipper.dict
+            dist/klipper.elf
           if-no-files-found: error
-      - name: Publish verified release
-        if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') }}
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || 'v0.1.0' }}
-        run: |
-          set -euo pipefail
-          if gh release view "$VERSION" >/dev/null 2>&1; then
-            gh release edit "$VERSION" --notes-file dist/RELEASE_NOTES.md
-            echo "::notice::Updated release notes for $VERSION; existing binaries and checksum assets unchanged."
-            exit 0
-          fi
-          # Tag a snapshot of the current source tree without parent history.
-          if ! git ls-remote --exit-code --tags origin "refs/tags/$VERSION" >/dev/null 2>&1; then
-            ROOT_TREE="$(git write-tree)"
-            ROOT_SHA="$(git -c user.name=malevich_mode -c user.email=actions@users.noreply.github.com commit-tree "$ROOT_TREE" -m "malevich_mode $VERSION")"
-            git push origin "$ROOT_SHA:refs/tags/$VERSION"
-          fi
-          gh release create "$VERSION" \
-            dist/malevich_mode-stm32f407-"$VERSION".bin \
-            dist/malevich_mode-stm32f407-"$VERSION".zip \
-            dist/SHA256SUMS.txt dist/MD5SUMS.txt \
-            --verify-tag \
-            --title "malevich_mode $VERSION — STM32F407" \
-            --notes-file dist/RELEASE_NOTES.md

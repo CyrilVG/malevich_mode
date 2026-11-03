@@ -24,6 +24,8 @@ cp "$BUILD_DIR/klipper.dict" "$DIST_DIR/staging/klipper.dict"
 
 cat > "$DIST_DIR/staging/BUILDINFO.txt" <<EOF
 Project: malevich_mode
+Panel: experimental MCU panel protocol 1, SSD1309 + HC165
+Host driver: panel/host/malevich_panel.py (required)
 Version: $VERSION
 MCU: STM32F407
 Flash start: 0x08000000
@@ -49,6 +51,8 @@ EOF
 cat > "$DIST_DIR/RELEASE_NOTES.md" <<EOF
 ## Русский
 
+Экспериментальная сборка с автономной панелью. Обязательно установите соответствующий драйвер хоста из malevich-panel-host-and-source.zip и замените секцию [display]. Сначала прочитайте panel/README.md. Проверка на физической плате ещё не выполнена.
+
 ### malevich_mode $VERSION — STM32F407
 
 Прошивка Klipper для платы STM32F407 со штатным USB-UART FT232R: UART5, TX PC12 / RX PD2, 250000 бод.
@@ -64,6 +68,8 @@ cat > "$DIST_DIR/RELEASE_NOTES.md" <<EOF
 ---
 
 ## English
+
+Experimental autonomous panel build. Matched host driver from malevich-panel-host-and-source.zip and replacement [display] section required. Read panel/README.md first. Not yet validated on physical hardware.
 
 ### malevich_mode $VERSION — STM32F407
 
