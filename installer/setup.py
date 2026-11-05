@@ -82,7 +82,11 @@ def plan_config(root, serial, gcodes):
             if name.startswith('include '):
                 continue
             if name in found:
-                raise ValueError('Повторная секция: [' + name + ']')
+                # Klipper merges repeated sections across [include] files.
+                # Only edits to duplicate MCU/display sections are ambiguous.
+                if name in ('mcu', 'display'):
+                    raise ValueError('Повторная секция: [' + name + ']')
+                continue
             found[name] = path
     # Refuse unexpected old virtual-pin users rather than remove unrelated config.
     for path, text in files.items():
