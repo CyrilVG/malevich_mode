@@ -18,20 +18,19 @@
 
 ## Русский
 
-### Установка на Raspberry Pi одной командой
+### Установка одной командой на Raspberry Pi
 
-Для Raspberry Pi 4 B с уже установленным Klipper и подключённой по SWD платой STM32F407VE:
+Установщик рассчитан на чистую установку Klipper на Raspberry Pi 3, 4 или 5 и плату STM32F407VE. Он покажет выбор одноплатника и модели принтера.
 
 ```bash
 bash <(wget -qO- https://raw.githubusercontent.com/CyrilVG/malevich_mode/main/install.sh)
 ```
 
-Перед запуском подключите физические контакты Pi **23 → PA14/SWCLK, 24 → PA13/SWDIO, 20 → GND**, подайте отдельное питание платы и подключите FT232R по USB. VCC между платами не соединять. SPI0 должен быть отключён.
+Для Raspberry Pi 3/4/5 подключите при выключенном питании: **контакт 23 / GPIO11 → PA14/SWCLK, контакт 24 / GPIO8 → PA13/SWDIO, контакт 20 → GND**. Подайте отдельное питание на плату STM32, VCC между платами не соединяйте, SPI0 отключите. Установщик предложит X или XL: Designer X устанавливается с прошивкой и профилем конфигурации; XL пока безопасно остановится до публикации проверенного комплекта. Orange Pi 3 LTS, Orange Pi 5 и 5 Plus есть в меню как будущие варианты, но пока не прошиваются без проверенной карты GPIO/SWD.
 
-Установщик поставит прошивку v0.2.0 и драйвер панели, настроит serial и энкодер (4 шага), сохранит резервные копии и полный дамп flash. Для проверки без изменений добавьте `--check`. На пустом конфиге создаётся тестовый режим без осей и нагрева; настройка механики для печати выполняется отдельно. Полная автоматическая установка на железе ещё требует проверки.
+Профиль X заменит `printer.cfg` и `board_pins.cfg`; перед этим установщик сохранит резервные копии и полный дамп flash. Добавьте `--keep-config`, чтобы сохранить текущую конфигурацию, или `--check`, чтобы увидеть план без изменений.
 
-[Подробности, параметры и откат](installer/README.md)
-
+[Подробности, распиновка, параметры и откат](installer/README.md)
 
 **malevich_mode** — адаптация [Klipper](https://github.com/Klipper3d/klipper) для платы на STM32F407 с заводским USB-UART FT232R. Репозиторий содержит минимальные патчи к оригинальным исходникам, инструкцию сборки и автоматизированную проверку.
 
@@ -128,10 +127,17 @@ GitHub Actions применяет патчи к закреплённому Klipp
 
 ### One-command Raspberry Pi installation
 
-With Klipper already installed on Raspberry Pi 4 B, use the command in the Russian section above. Wire physical Pi pins **23/24/20 to PA14 SWCLK/PA13 SWDIO/GND**, power the target separately and connect FT232R USB. Disable SPI0 and leave target VCC disconnected from the Pi.
+The installer targets a clean Klipper setup on Raspberry Pi 3, 4 or 5 with the STM32F407VE board. It offers host-board and printer-model choices.
 
-The installer verifies the pinned v0.2.0 binary, saves host files and full flash, programs through SWD, installs the panel driver and configures the MCU/display. Use `--check` for software preflight. Empty configurations get a panel test mode without motion/heaters. End-to-end hardware installer validation remains pending. [Details and rollback](installer/README.md).
+```bash
+bash <(wget -qO- https://raw.githubusercontent.com/CyrilVG/malevich_mode/main/install.sh)
+```
 
+For Raspberry Pi 3/4/5, connect with power off: **header pin 23 / GPIO11 → PA14/SWCLK, pin 24 / GPIO8 → PA13/SWDIO, pin 20 → GND**. Power the STM32 board separately, leave VCC disconnected, and disable SPI0. Select Designer X or XL: X installs its firmware and configuration profile; XL stops safely until its validated bundle is published. Orange Pi 3 LTS, Orange Pi 5 and 5 Plus appear as future menu options, but are not flashed until their GPIO/SWD maps are verified.
+
+The X profile replaces `printer.cfg` and `board_pins.cfg`; host files and the full flash are backed up first. Add `--keep-config` to preserve the existing configuration, or `--check` to review the plan without changes.
+
+[Details, pinout, options and rollback](installer/README.md).
 
 **malevich_mode** adapts [Klipper](https://github.com/Klipper3d/klipper) to a custom STM32F407 board with an on-board FT232R USB-to-serial adapter. This repository contains minimal patches to upstream Klipper, build instructions, and CI validation.
 

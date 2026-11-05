@@ -1,74 +1,92 @@
-# Установка одной командой / One-command installation
+# Установка Malevich одной командой
 
-## Русский
-
-Для Raspberry Pi 4 Model B, уже установленного Klipper и платы STM32F407VE
-(512 КиБ, кварц 25 МГц, FT232R UART5 PC12/PD2). Устанавливается проверенный
-BIN v0.2.0 с драйвером панели и 4 шагами энкодера на щелчок.
-
-До запуска подключите при выключенном питании:
-
-| Физический контакт Raspberry | Плата |
-| --- | --- |
-| 23 (GPIO11) | PA14 / SWCLK |
-| 24 (GPIO8) | PA13 / SWDIO |
-| 20 (GND) | GND |
-
-VCC между платами не соединять. Подайте штатное питание на STM32. FT232R
-должен быть подключён к Raspberry по USB. SPI0 должен быть отключён.
-
-Запуск от обычного пользователя, например pi, без sudo перед командой:
+Установщик запускается на Raspberry Pi с уже установленными Klipper и Moonraker.
+Сейчас он поддерживает Raspberry Pi 3, 4 и 5, плату STM32F407VE с UART5/FT232R
+и принтер Designer X.
 
 ```bash
 bash <(wget -qO- https://raw.githubusercontent.com/CyrilVG/malevich_mode/main/install.sh)
 ```
 
-Для предварительной проверки без изменений добавьте `--check` в конец.
-Пароль sudo может потребоваться при установке. Запуск во время печати запрещён.
+Он определит Raspberry Pi или предложит выбрать плату, затем спросит модель
+принтера. Для X будет показана распиновка SWD и установлен комплект X. На Pi 3/4
+используются физические контакты GPIO-разъёма 23, 24 и 20; Pi 5 использует
+OpenOCD linuxgpiod с теми же контактами.
 
-Установщик проверяет модель Pi, пути systemd-сервиса и serial-порт; проверяет
-SHA256 готовой прошивки; сохраняет конфиги, драйвер и полный дамп 512 КиБ flash;
-записывает и проверяет BIN через SWD; устанавливает host-драйвер; настраивает
-[mcu] и [display], включая секции в include-файлах; запускает Klipper и ждёт
-состояния ready. При ошибке после начала прошивки оставляет Klipper остановленным.
+| Одноплатник | SWCLK | SWDIO | Земля | Статус |
+| --- | --- | --- | --- | --- |
+| Raspberry Pi 3 | pin 23 / GPIO11 → PA14 | pin 24 / GPIO8 → PA13 | pin 20 → GND | Поддерживается |
+| Raspberry Pi 4 | pin 23 / GPIO11 → PA14 | pin 24 / GPIO8 → PA13 | pin 20 → GND | Поддерживается |
+| Raspberry Pi 5 | pin 23 / GPIO11 → PA14 | pin 24 / GPIO8 → PA13 | pin 20 → GND | Поддерживается |
+| Orange Pi 3 LTS | — | — | — | Профиль GPIO не проверен; установка остановится без изменений |
+| Orange Pi 5 | — | — | — | Профиль GPIO не проверен; установка остановится без изменений |
+| Orange Pi 5 Plus | — | — | — | Профиль GPIO не проверен; установка остановится без изменений |
 
-Копии находятся в `~/malevich-backups/ДАТА-ВРЕМЯ/`. Команда возврата:
+На Orange Pi нельзя подключать провода по распиновке Raspberry Pi: уровни GPIO,
+имена линий и профиль OpenOCD отличаются. Поддержка появится после проверки
+конкретных платы и ОС.
+
+## Перед запуском
+
+При выключенном питании соедините SWD-провода, затем подайте штатное питание на
+плату STM32. Не соединяйте VCC между Raspberry и контроллером. FT232R должен быть
+подключён к Raspberry по USB. На Pi 3/4/5 отключите SPI0, так как он использует
+GPIO8/GPIO11. Не запускайте установку во время печати или движения принтера.
+
+Установка Designer X заменяет активные `printer.cfg` и `board_pins.cfg` профилем
+из комплекта. Перед записью создаётся резервная копия файлов и полный дамп flash
+STM32. Если требуется оставить текущий конфиг, добавьте `--keep-config`:
+
+```bash
+bash <(wget -qO- https://raw.githubusercontent.com/CyrilVG/malevich_mode/main/install.sh) --keep-config
+```
+
+Для предварительной проверки без изменений добавьте `--check`. Если FT232R не
+один, укажите точный serial-путь:
+
+```bash
+bash <(wget -qO- https://raw.githubusercontent.com/CyrilVG/malevich_mode/main/install.sh) \
+  --serial /dev/serial/by-id/usb-FTDI_FT232R_USB_UART_A9WERABX-if00-port0
+```
+
+Можно явно выбрать одноплатник и принтер флагами `--host-board pi3|pi4|pi5` и
+`--printer-model X|XL`. Pi 3/4/5 также определяются автоматически. Orange Pi
+показываются в меню как будущие варианты и пока безопасно отклоняются.
+
+## Что делает установщик
+
+Установщик проверяет пути Klipper и Moonraker, serial-порт, профиль платы и SHA256
+прошивки. Затем он сохраняет файлы и 512 КиБ flash, прошивает и проверяет MCU
+через SWD, устанавливает host-драйвер дисплея, настраивает MCU и панель,
+устанавливает конфигурацию X (если не указан `--keep-config`), запускает Klipper
+и ждёт состояния `ready`. При ошибке после записи прошивки Klipper остаётся
+остановленным; диагностика и команда отката выводятся в терминал.
+
+Резервные копии находятся в `~/malevich-backups/ДАТА-ВРЕМЯ/`. Откат запускается
+из напечатанного каталога:
 
 ```bash
 python3 ~/malevich-backups/ДАТА-ВРЕМЯ/restore.py
 ```
 
-Она восстанавливает прежние flash и файлы. Для отката нужны подключённые SWD
-провода и питание платы. USB-накопители, бипер, непроверенные силовые выходы не
-настраиваются. Существующие конфиги механики сохраняются. На пустой установке
-создаётся `kinematics: none`: плата и панель готовы к проверке, но принтер ещё
-не готов к печати без настройки осей, температур и защит.
+Для отката нужны SWD-провода и питание платы. Автоматического фонового обновления
+или перепрошивки нет.
 
-По умолчанию: `~/klipper`, `~/printer_data/config/printer.cfg`,
-`~/printer_data/comms/klippy.sock`, сервис `klipper`.
-Параметры: `--klipper PATH`, `--config PATH`, `--socket PATH`, `--service NAME`,
-`--serial /dev/serial/by-id/...`. Если FT232R несколько, serial обязателен.
+## Модели принтеров
 
-Повторная установка снова делает копию и прошивает тот же закреплённый BIN.
-После обновления чистого Klipper, удалившего изменение display.py, повторите
-команду. Автоматического обновления или фоновой перепрошивки нет.
+- **Designer X** — установщик использует прошивку v0.2.0 и профиль X из
+  `profiles/designer_x/`. После установки проверьте датчики, направления осей,
+  концевики, нагреватели и реле до печати.
+- **Designer XL** — выбор уже есть в интерфейсе и в структуре путей прошивки и
+  конфигурации, но установка пока остановится до любых изменений. Нужны
+  проверенная прошивка XL и завершённый профиль `profiles/designer_xl/printer.cfg`.
+  Черновые XL-файлы не используются автоматически.
 
-Проверки: тесты редактирования конфигов и повторного запуска, тесты host-драйвера,
-тесты MCU-обработки панели. Прошивка v0.2.0 и ручная запись через Pi проверены
-пользователем; полная автоматическая установка на железе ещё требует проверки.
+Параметры путей: `--klipper PATH`, `--config PATH`, `--socket PATH`, `--service
+NAME`. Установщик запускается от обычного пользователя Klipper, например `pi`, без
+`sudo` перед командой. `sudo` используется только для OpenOCD и управления
+сервисом.
 
-## English
-
-For Raspberry Pi 4 B with Klipper already installed and the STM32F407VE board
-(512 KiB flash, 25 MHz HSE, FT232R UART5 PC12/PD2). Connect physical Pi pins
-23/24/20 to target SWCLK/SWDIO/GND, supply target power separately, leave VCC
-unconnected and disable SPI0. Run the command above as the Klipper user.
-
-The installer verifies the bundled v0.2.0 image, backs up host files and the
-entire flash, programs/verifies through SWD, installs the paired panel driver,
-updates MCU/display sections and waits for Klipper ready. Encoder uses four
-steps per detent. `--check` performs software preflight without modifications.
-Backup directories contain restore.py for explicit rollback. Existing machine
-configuration is preserved; an empty install gets kinematics:none for panel
-testing only. USB storage and unverified machine outputs are not configured.
-End-to-end hardware installation testing remains pending.
+Полную установку на железе нужно проверять на конкретном комплекте платы,
+принтера и ОС. Ручная прошивка через Raspberry Pi 4 и работа энкодера на MCU
+ранее проверены владельцем устройства.
