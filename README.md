@@ -14,6 +14,14 @@
   <a href="docs/flashing/README.md">Прошивка / Flashing</a>
 </p>
 
+<details>
+<summary>⚠️ Важно / Important</summary>
+
+**Русский:** Используйте прошивку и инструкции на свой страх и риск. Автор не несёт ответственности за повреждение оборудования и последствия установки.
+
+**English:** Use the firmware and instructions at your own risk. The author is not responsible for equipment damage or consequences of installation.
+</details>
+
 ---
 
 ## Русский
