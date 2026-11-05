@@ -24,7 +24,7 @@ wget --https-only --timeout=30 --tries=3 -qO "$work/profiles/designer_x/board_pi
 (
     cd "$work"
     sha256sum -c <<'CHECKSUMS'
-20acc07454308c49f2f3c7798af64c05d7c60f582bfcb345d1581a76b7ff4827  installer/setup.py
+f2822b9fc159a17e37b63d7d8391bd63c953054b6e062a1bd1a5d306b76bdb4e  installer/setup.py
 e8d09934aa45e5038d5b73821ebfcb6112376663e638cccc206acc3c92e386cc  installer/restore.py
 daf5d90eaa375f30f17d5bdbf696514cb50500c30df3824f50fc905f264d3546  installer/firmware.bin.b64
 599e4c985bbed92d46dbca3ff91892d68534fa0263f52c99cf8a3ba0c7b4e36b  panel/host/malevich_panel.py

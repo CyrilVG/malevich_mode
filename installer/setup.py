@@ -44,6 +44,21 @@ reset_config none
 def run(args, **kw):
     return subprocess.run([str(x) for x in args], check=True, **kw)
 
+def color(text, code):
+    if not sys.stdout.isatty() or os.environ.get('NO_COLOR'):
+        return text
+    return '\033[' + code + 'm' + text + '\033[0m'
+
+def ask_choice(title, options, default=None):
+    print(color(title, '96'))
+    for key, label in options:
+        suffix = ' (определена)' if key == default else ''
+        print('  ' + color(key + ')', '92') + ' ' + label + suffix)
+    prompt = 'Выбор'
+    if default:
+        prompt += ' [Enter = ' + default + ']'
+    return input(color(prompt + ': ', '93')).strip() or (default or '')
+
 def sections(text):
     matches = list(HEADER.finditer(text))
     for i, m in enumerate(matches):
@@ -63,7 +78,9 @@ def load_configs(root, staged=None):
         if path in active:
             raise ValueError('Циклический include: ' + str(path))
         if path in result:
-            raise ValueError('Повторный include: ' + str(path))
+            # Klipper allows the same file to be reached from more than one
+            # include path; its parser only rejects a file included recursively.
+            return
         exists = path.exists() or path in staged
         text = staged.get(path, path.read_text() if path.exists() else '')
         if not exists and path != root.resolve():
@@ -283,16 +300,22 @@ def main():
         'opi5':'Orange Pi 5 (SWD GPIO mapping not validated)',
         'opi5plus':'Orange Pi 5 Plus (SWD GPIO mapping not validated)',
     }
+    board_options = [
+        ('1', 'Raspberry Pi 3'),
+        ('2', 'Raspberry Pi 4'),
+        ('3', 'Raspberry Pi 5'),
+        ('4', 'Orange Pi 3 LTS'),
+        ('5', 'Orange Pi 5'),
+        ('6', 'Orange Pi 5 Plus'),
+    ]
     aliases = {'1':'pi3','2':'pi4','3':'pi5','4':'opi3lts','5':'opi5','6':'opi5plus'}
     detected_board = ('pi3' if 'Raspberry Pi 3' in detected_model else
                       'pi4' if 'Raspberry Pi 4' in detected_model else
                       'pi5' if 'Raspberry Pi 5' in detected_model else None)
     board = a.host_board or detected_board
     if not a.host_board and sys.stdin.isatty():
-        prompt = 'Одноплатник: 1 Pi 3  2 Pi 4  3 Pi 5  4 Orange Pi 3 LTS  5 Orange Pi 5  6 Orange Pi 5 Plus'
-        if board:
-            prompt += ' [Enter = ' + board + ']'
-        choice = input(prompt + ': ').strip()
+        detected_choice = next((key for key, value in aliases.items() if value == board), None)
+        choice = ask_choice('Выберите одноплатник:', board_options, detected_choice)
         if choice:
             board = aliases.get(choice)
     elif not board:
@@ -309,7 +332,11 @@ def main():
     if a.printer_model:
         printer_model = a.printer_model
     elif sys.stdin.isatty():
-        printer_model = input('Принтер: 1 Designer X  2 Designer XL: ').strip().upper()
+        printer_choice = ask_choice('Выберите модель принтера:', [
+            ('1', 'Designer X'),
+            ('2', 'Designer XL'),
+        ])
+        printer_model = {'1':'X', '2':'XL'}.get(printer_choice, printer_choice.upper())
     else:
         raise ValueError('Укажите модель принтера флагом --printer-model X или XL')
     if printer_model in ('1','X'): printer_model='X'
@@ -332,7 +359,7 @@ def main():
     if a.install_x_config:
         install_x_config = True
     elif a.printer_model is None and sys.stdin.isatty() and not a.keep_config:
-        answer = input('Установить профиль конфигурации Designer X из комплекта? Текущие файлы будут сохранены в резервную копию [Y/n]: ').strip().lower()
+        answer = input(color('Установить профиль конфигурации Designer X из комплекта? Текущие файлы будут сохранены в резервную копию [Y/n]: ', '93')).strip().lower()
         install_x_config = answer not in ('n', 'no')
 
     if not re.fullmatch(r'[\w@.-]+', a.service):
