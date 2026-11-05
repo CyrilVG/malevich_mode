@@ -54,40 +54,6 @@ bash <(wget -qO- https://raw.githubusercontent.com/CyrilVG/malevich_mode/main/in
 
 USB-UART линии подключены следующим образом: PC12 (ножка LQFP100 №80) → RX FT232R; PD2 (ножка №54) ← TX FT232R. Не занимайте эти выводы одновременно под SDIO.
 
-### Применение патчей
-
-Используется официальный Klipper на закреплённом upstream-коммите `ee2c6fb6b00b2b5d097ef70d0868df7d74943b51`. При переходе на более новую версию требуется повторно проверить совместимость патчей.
-
-```bash
-git clone git@github.com:CyrilVG/malevich_mode.git ~/malevich_mode
-cd ~/klipper
-git status --short
-for patch in ~/malevich_mode/patches/*.patch; do
-    git apply --check "$patch" || exit 1
-    git apply "$patch" || exit 1
-done
-make menuconfig
-```
-
-Для MCU в `make menuconfig` выберите:
-- **Enable extra low-level configuration options:** Yes
-- **Micro-controller Architecture:** STMicroelectronics STM32
-- **Processor model:** STM32F407
-- **Bootloader offset:** No bootloader
-- **Clock Reference:** 25 MHz crystal
-- **Communication interface:** Serial (on UART5 PD2/PC12)
-- **Baud rate:** 250000
-
-Сборка:
-
-```bash
-cd ~/klipper
-make olddefconfig
-make clean
-make -j"$(nproc)"
-ls -lh out/klipper.bin
-```
-
 ### Как прошить плату (SWD)
 
 **[Открыть руководство по прошивке](docs/flashing/README.md)** — общая схема подключения, требования к питанию, проверка BIN и устранение ошибок.
@@ -187,40 +153,6 @@ The installer verifies the pinned v0.2.0 binary, saves host files and full flash
 **Power requirement:** USB powers the FT232R, **not the STM32 board**. Seeing `/dev/ttyUSB0` does not mean the MCU is powered. Apply the board's separate, specified power supply before connecting Klipper. This power topology has been confirmed on hardware.
 
 The STM32 signals are routed as PC12 (LQFP100 pin 80) → FT232R RX and PD2 (pin 54) ← FT232R TX. Do not use PC12/PD2 for SDIO at the same time.
-
-### Applying the patches
-
-The supported upstream Klipper revision is pinned to `ee2c6fb6b00b2b5d097ef70d0868df7d74943b51`. Verify and adapt the patches before upgrading upstream.
-
-```bash
-git clone git@github.com:CyrilVG/malevich_mode.git ~/malevich_mode
-cd ~/klipper
-git status --short
-for patch in ~/malevich_mode/patches/*.patch; do
-    git apply --check "$patch" || exit 1
-    git apply "$patch" || exit 1
-done
-make menuconfig
-```
-
-Use these `make menuconfig` settings:
-- Enable extra low-level configuration options: **Yes**
-- Micro-controller Architecture: **STMicroelectronics STM32**
-- Processor model: **STM32F407**
-- Bootloader offset: **No bootloader**
-- Clock Reference: **25 MHz crystal**
-- Communication interface: **Serial (on UART5 PD2/PC12)**
-- Baud rate: **250000**
-
-Build the firmware:
-
-```bash
-cd ~/klipper
-make olddefconfig
-make clean
-make -j"$(nproc)"
-ls -lh out/klipper.bin
-```
 
 ### Flashing the board (SWD)
 
