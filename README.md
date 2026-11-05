@@ -28,7 +28,7 @@
 
 ### Установка одной командой на Raspberry Pi
 
-Установщик рассчитан на чистую установку Klipper на Raspberry Pi 3, 4 или 5 и плату STM32F407VE. Он покажет выбор одноплатника и модели принтера. При выборе X он копирует полный комплект панели в `/home/pi/panel`, подключает host-драйвер к Klipper и записывает точную секцию `[display]`: `lcd_type: malevich_panel`, `encoder_steps_per_detent: 4`, `panel_reverse_encoder: False`, `contrast: 239`, `invert: False`.
+Установщик рассчитан на чистую установку Klipper на Raspberry Pi 3, 4 или 5 и плату STM32F407VE. Он покажет выбор одноплатника и модели принтера. 
 
 ```bash
 bash <(wget -qO- https://raw.githubusercontent.com/CyrilVG/malevich_mode/main/install.sh)
@@ -73,7 +73,7 @@ GitHub Actions собирает и проверяет прошивку STM32F407
 
 ### One-command Raspberry Pi installation
 
-The installer targets a clean Klipper setup on Raspberry Pi 3, 4 or 5 with the STM32F407VE board. It offers host-board and printer-model choices. For X, it also copies the complete panel bundle to `/home/pi/panel`, integrates the Klipper host driver, and writes the exact `[display]` settings: `lcd_type: malevich_panel`, `encoder_steps_per_detent: 4`, `panel_reverse_encoder: False`, `contrast: 239`, and `invert: False`.
+The installer targets a clean Klipper setup on Raspberry Pi 3, 4 or 5 with the STM32F407VE board. It offers host-board and printer-model choices. 
 
 ```bash
 bash <(wget -qO- https://raw.githubusercontent.com/CyrilVG/malevich_mode/main/install.sh)
