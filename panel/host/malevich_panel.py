@@ -7,7 +7,7 @@ class MalevichPanel(DisplayBase):
         self.printer = config.get_printer()
         self.reactor = self.printer.get_reactor()
         self.mcu = self.printer.lookup_object('mcu')
-        self.steps = config.getchoice('encoder_steps_per_detent', [2, 4], 2)
+        self.steps = config.getchoice('encoder_steps_per_detent', [2, 4], 4)
         self.reverse = config.getboolean('panel_reverse_encoder', False)
         self.fast_rate = config.getfloat('encoder_fast_rate', .030, above=0.)
         self.contrast = config.getint('contrast', 239, minval=0, maxval=255)

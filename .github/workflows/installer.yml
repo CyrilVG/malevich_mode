@@ -1,0 +1,25 @@
+name: Installer checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test configuration migration and host transport
+        run: |
+          python3 installer/test_setup.py
+          python3 panel/tests/test_host.py
+          python3 -m py_compile installer/setup.py installer/restore.py
+          if test -f install.sh; then bash -n install.sh; fi
+      - name: Verify pinned firmware
+        run: |
+          python3 - <<'PY'
+          import base64, hashlib, runpy
+          from pathlib import Path
+          module = runpy.run_path('installer/setup.py', run_name='test')
+          data = base64.b64decode(Path('installer/firmware.bin.b64').read_bytes())
+          assert len(data) == 47408
+          assert hashlib.sha256(data).hexdigest() == module['FIRMWARE_SHA']
+          PY
