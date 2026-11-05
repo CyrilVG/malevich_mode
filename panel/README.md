@@ -1,38 +1,43 @@
 # PICASO panel MCU prototype
 
+## Основной способ установки
+
+Однокомандный установщик сам размещает полный комплект в `/home/pi/panel`,
+подключает host-драйвер к Klipper и добавляет в `printer.cfg` секцию `[display]`
+из `display.cfg`. Отдельно запускать `install.py` и копировать эту секцию не
+нужно. Инструкции по ручной прошивке программатором находятся в
+[`docs/flashing/README.md`](../docs/flashing/README.md).
+
 ## Установка и проверка
 
-Это экспериментальная прошивка с переносом энкодера и управления дисплеем
-на STM32. Сборка и программные тесты выполнены; на вашей плате ещё не проверена.
-Обязательно использовать новый BIN вместе с драйвером хоста из этого комплекта.
+Используйте основной установщик из корня репозитория. Он устанавливает полный
+исходный и host-пакет в `~/panel`, подключает драйвер к Klipper, прошивает
+совместимый MCU BIN и записывает в конфиг ровно эту секцию:
 
-1. Сохраните рабочий printer.cfg и старый BIN для возврата.
-2. Распакуйте комплект так, чтобы папка panel лежала в /home/pi/panel.
-3. Остановите Klipper: `sudo systemctl stop klipper`.
-4. Установите драйвер: `python3 ~/panel/install.py`.
-5. Полностью замените старую секцию [display] содержимым display.cfg.
-   Секции пользовательского меню оставьте. Старые параметры hc165_*, spi_*,
-   encoder_pins, click_pin, cs_pin, dc_pin и reset_pin в [display] удалите.
-6. Запишите новый BIN через SWD с адреса 0x08000000 прежним способом.
-7. Запустите `sudo systemctl start klipper`.
+```ini
+[display]
+lcd_type: malevich_panel
+encoder_steps_per_detent: 4
+panel_reverse_encoder: False
+contrast: 239
+invert: False
+```
 
-Проверка: медленно и быстро повернуть в обе стороны, нажать и удержать кнопку,
-выполнить HC_PANEL_STATUS. overflow должен оставаться 0. invalid показывает
-недопустимые скачки сигналов A/B; max_scan_ticks — максимальный промежуток
-между опросами в тактах MCU (CLOCK_FREQ находится в klipper.dict).
+Старые ручные шаги с `python3 ~/panel/install.py` больше не нужны. Порядок
+ручной прошивки программатором описан в
+[`docs/flashing/README.md`](../docs/flashing/README.md).
 
-Затем остановите сервис Klipper: заставка должна появиться примерно через
-секунду. После запуска сервиса меню вернётся, когда связь восстановлена и
-картинка уже показана минимум 5 секунд. Это 5 секунд ОТ ПОЯВЛЕНИЯ картинки,
-а не дополнительные 5 секунд после восстановления связи. Проверьте также
-включение основной платы без Raspberry. Moonraker и браузер здесь не участвуют.
+После установки проверьте поворот энкодера в обе стороны, нажатие кнопки и
+команду `HC_PANEL_STATUS`; `overflow` должен оставаться равным 0. `invalid`
+считает недопустимые скачки сигналов A/B, а `max_scan_ticks` показывает
+максимальный промежуток между опросами в тактах MCU. Klipper `CLOCK_FREQ`
+находится в `klipper.dict`.
 
-Если направление не подходит: panel_reverse_encoder: True. Шагов на щелчок
-сейчас 2; параметр encoder_steps_per_detent допускает также 4.
-
-Для отката: остановить Klipper, вернуть display.py из папки malevich-backup-*
-(путь напечатает установщик), старую секцию [display] и прежний BIN, затем
-запустить Klipper. Реле, бипер и USB этим изменением не настраиваются.
+При остановке Klipper заставка появляется примерно через секунду. Меню
+возвращается после восстановления связи, если заставка уже отображалась не
+менее пяти секунд. Связь с Moonraker, браузером и Wi-Fi на это не влияет.
+Откатите установку скриптом `restore.py` из напечатанного каталога резервной
+копии. Реле, бипер и USB этим этапом не настраиваются.
 
 ## Technical details
 
@@ -47,36 +52,18 @@ pins from boot; its RESERVE_PINS entry prevents their reuse by normal config:
 PD5 CS, PD6 RESET, PD7 OLED D/C + HC165 /PL, PB3 clock (HC165 CP inverted),
 PB5 MOSI, PB4 HC165 Q7. Encoder D0/D1, active-low button D2.
 
-## Install on Raspberry Pi
+## Install
 
-Back up printer.cfg and keep the previous working BIN for rollback.
-Extract the host/source ZIP so this folder is ~/panel. Then:
+Run the one-command installer from the repository README. It places this full
+source and host package in `~/panel`, adds the Klipper driver, and configures the
+display automatically. Follow the flashing wiki linked above only when using a
+separate programmer. The installer makes a recoverable backup before it changes
+the host files or MCU firmware.
 
-```sh
-sudo systemctl stop klipper
-python3 ~/panel/install.py
-```
-
-Replace the ENTIRE old [display] section with display.cfg, retaining any
-custom [menu ...] sections. Remove old hc165_enable/hc165_poll_interval,
-encoder_pins/click_pin, spi_*, cs_pin/dc_pin/reset_pin from that section.
-The new firmware owns those fixed pins. Do not add duplicate sections.
-Existing uc1701.py experimental changes are unused by lcd_type: malevich_panel.
-The installer backs up display.py and any previously installed new driver.
-
-Flash the matching new .bin over SWD to 0x08000000 using the existing board
-procedure, with main board power present. Then:
-
-```sh
-sudo systemctl start klipper
-```
-
-Set panel_reverse_encoder: True if navigation direction needs reversing.
-Use encoder_steps_per_detent: 2 (currently tested on the physical encoder);
-4 is also supported. HC_PANEL_STATUS shows raw input, online/menu state,
-queue overflow, invalid quadrature changes, longest scan interval in MCU ticks.
-The timing measurement uses Klipper CLOCK_FREQ from klipper.dict.
-Counters are cumulative since MCU reset. Overflow must stay zero.
+Set `panel_reverse_encoder: True` if navigation direction needs reversing.
+`HC_PANEL_STATUS` shows raw input, online/menu state, queue overflow, invalid
+quadrature changes, and longest scan interval in MCU ticks. Counters are
+cumulative since MCU reset; overflow should stay zero.
 
 ## Behaviour
 

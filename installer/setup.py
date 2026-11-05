@@ -19,6 +19,15 @@ import time
 
 FIRMWARE_SHA = '4704cc2d51ad55adbc388a45e8795644ef4992acdf39cbecdcf11c52bdf8fbb5'
 FIRMWARE_SHA_BY_MODEL = {'X': FIRMWARE_SHA, 'XL': None}
+PANEL_FILES = (
+    'README.md', 'display.cfg', 'install.py',
+    'host/malevich_panel.py',
+    'src/malevich_panel.c', 'src/malevich_logo.h',
+    'tests/test_host.py', 'tests/test_panel.c',
+    'tests/stubs/board/gpio.h', 'tests/stubs/board/irq.h',
+    'tests/stubs/board/misc.h', 'tests/stubs/command.h',
+    'tests/stubs/sched.h',
+)
 HEADER = re.compile(r'^[ \t]*\[([^\]\n]+)\][ \t]*(?:[#;].*)?$', re.M)
 DISPLAY = '''[display]
 lcd_type: malevich_panel
@@ -112,37 +121,21 @@ def plan_config(root, serial, gcodes):
                 continue
             found.setdefault(name, path)
             occurrences.setdefault(name, []).append((path, start, end))
-    # Fluidd and user configs often both define virtual_sdcard/status helpers.
-    # Keep the first definition and remove later copies; Klipper rejects duplicates.
+    # A user config can reach the same included tree from more than one place.
+    # Leave unrelated duplicate sections untouched; only transport/display
+    # sections must be unique because this installer replaces them below.
     for name, instances in occurrences.items():
-        if len(instances) < 2:
-            continue
-        if name not in ('virtual_sdcard', 'pause_resume', 'display_status', 'respond'):
+        if len(instances) > 1 and name in ('mcu', 'display'):
             paths = [path for path, _, _ in instances]
             raise ValueError('Повторная секция: [' + name + '] в ' + ', '.join(map(str, paths)))
-        # Drop only later occurrences, including duplicates in the same file.
-        for path, start, end in reversed(instances[1:]):
-            text = files[path]
-            files[path] = text[:start] + text[end:]
 
     for path, text in files.items():
         for name, start, end in sections(text):
             if name != 'display' and re.search(r'(?m)^\s*[^#;\n][^\n]*hc165:', text[start:end]):
                 raise ValueError('Вне [display] остались hc165-пины: ' + name)
-    display = DISPLAY
-    if 'display' in found:
-        text = files[found['display']]
-        _, start, end = next(x for x in sections(text) if x[0] == 'display')
-        # Retain presentation and navigation preferences, not old physical pins.
-        keep = ('menu_root', 'menu_timeout', 'menu_reverse_navigation',
-                'display_group', 'encoder_fast_rate', 'panel_reverse_encoder',
-                'contrast', 'invert')
-        for key in keep:
-            match = re.search(r'(?m)^[ \t]*' + key + r'[ \t]*[:=][^\n]*', text[start:end])
-            if match:
-                display = re.sub(r'(?m)^' + key + r':[^\n]*\n', '', display)
-                display += match.group(0).strip() + '\n'
-    replacements = {'display': display}
+    # Replace the entire physical display configuration with display.cfg.
+    # User menu sections remain separate Klipper sections and are preserved.
+    replacements = {'display': DISPLAY}
     mcu = '[mcu]\nserial: ' + serial + '\nbaud: 250000\nrestart_method: command\n'
     if 'mcu' in found:
         text = files[found['mcu']]
@@ -198,41 +191,46 @@ def install_x_profile(config, serial, gcodes, payload):
     else:
         cfg = cfg.rstrip() + '\n\n' + DISPLAY
 
-    fluidd_path = config_dir / 'fluidd.cfg'
-    fluidd = fluidd_path.read_text() if fluidd_path.exists() else ''
-    fluidd_sections = [name for name, _, _ in sections(fluidd)]
-    if not fluidd_path.exists():
-        fluidd = ''
+    board_pins_path = (config_dir / 'board_pins.cfg').resolve()
+    planned = {
+        config: cfg,
+        board_pins_path: pins.read_text(),
+    }
+    # Inspect the complete include tree, but do not rewrite fluidd.cfg: it can
+    # be a symlink into fluidd-config/client.cfg, outside printer_data/config.
+    files = load_configs(config, planned)
+    included_sections = [name for text in files.values()
+                         for name, _, _ in sections(text)]
     for name, block in (
         ('virtual_sdcard', '[virtual_sdcard]\npath: ' + str(gcodes) + '\n'),
         ('pause_resume', '[pause_resume]\n'),
         ('display_status', '[display_status]\n'),
         ('respond', '[respond]\n'),
     ):
-        if name not in fluidd_sections:
-            fluidd = fluidd.rstrip() + '\n\n' + block
-            fluidd_sections.append(name)
-    for name, start, end in sections(fluidd):
-        if name == 'virtual_sdcard' and not re.search(r'(?mi)^\s*path\s*[:=]', fluidd[start:end]):
-            fluidd = fluidd[:end].rstrip() + '\npath: ' + str(gcodes) + '\n' + fluidd[end:]
-            break
-    if not fluidd_path.exists():
-        fluidd = fluidd.lstrip()
+        if name not in included_sections:
+            cfg = cfg.rstrip() + '\n\n' + block
+            included_sections.append(name)
+    virtual_sd_sections = [text[start:end] for text in files.values()
+                           for name, start, end in sections(text)
+                           if name == 'virtual_sdcard']
+    if virtual_sd_sections and not any(re.search(r'(?mi)^\s*path\s*[:=]', block)
+                                       for block in virtual_sd_sections):
+        cfg = cfg.rstrip() + '\n\n[virtual_sdcard]\npath: ' + str(gcodes) + '\n'
     planned = {
         config: cfg,
-        (config_dir / 'board_pins.cfg').resolve(): pins.read_text(),
-        fluidd_path.resolve(): fluidd.rstrip() + '\n',
+        board_pins_path: pins.read_text(),
     }
     files = load_configs(config, planned)
     seen = {}
+    critical_sections = {'display', 'mcu'}
     for path, text in files.items():
         for name, _, _ in sections(text):
             if name.startswith('include '):
                 continue
-            if name in seen:
+            if name in seen and (name in critical_sections or name.startswith('board_pins')):
                 raise ValueError('Профиль X содержит повторную секцию [' + name +
                                  '] в ' + str(seen[name]) + ' и ' + str(path))
-            seen[name] = path
+            seen.setdefault(name, path)
     return planned
 
 def driver_plan(klipper, payload):
@@ -247,6 +245,22 @@ def driver_plan(klipper, payload):
     module = (payload / 'panel/host/malevich_panel.py').read_text()
     compile(module, 'malevich_panel.py', 'exec')
     return {dest: text, dest.parent / 'malevich_panel.py': module}
+
+def panel_bundle_plan(payload):
+    source = payload / 'panel'
+    target = Path.home() / 'panel'
+    planned = {}
+    for relative in PANEL_FILES:
+        src = source / relative
+        if not src.is_file():
+            raise ValueError('В комплекте отсутствует panel/' + relative)
+        planned[target / relative] = src.read_text()
+    display_cfg = (source / 'display.cfg').read_text()
+    normalize = lambda text: [line.strip() for line in text.splitlines()
+                              if line.strip() and not line.lstrip().startswith('#')]
+    if normalize(display_cfg) != normalize(DISPLAY):
+        raise ValueError('panel/display.cfg не совпадает с конфигурацией [display] установщика')
+    return planned
 
 def ready(sockpath, timeout=60):
     deadline = time.monotonic() + timeout
@@ -401,6 +415,7 @@ def main():
     planned = (install_x_profile(a.config, serial, gcodes, payload) if install_x_config
                else plan_config(a.config, serial, gcodes))
     planned.update(driver_plan(a.klipper, payload))
+    planned.update(panel_bundle_plan(payload))
     print('Плата: STM32F407VE; одноплатник:', boards[board], '|', detected_model or board)
     print('OpenOCD профиль:', 'Pi 5 linuxgpiod' if board == 'pi5' else 'Pi 3/4 native GPIO')
     print('BIN v0.2.0:', expected_sha)
@@ -410,6 +425,8 @@ def main():
         print('Профиль X заменит printer.cfg и карту board_pins.cfg; прежние файлы попадут в резервную копию.')
     else:
         print('Существующие оси/нагреватели сохраняются; будут обновлены MCU и панель.')
+    print('Панель: полный комплект будет установлен в', Path.home() / 'panel')
+    print('Конфигурация [display]:\n' + DISPLAY.rstrip())
     print('Файлы:', '\n'.join(str(x) for x in planned))
     if a.check:
         print('Проверка завершена; изменений нет.')
