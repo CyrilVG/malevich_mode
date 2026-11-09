@@ -1,12 +1,19 @@
-# Designer XL profile status
+# Designer XL
 
-The installer reserves these paths for a future XL bundle:
+Профиль XL хранится отдельно от X:
 
-- `profiles/designer_xl/printer.cfg`
-- `firmware/designer_xl/klipper.bin`
+- `printer.cfg` — оси, нагреватели и периферия;
+- `board_pins.cfg` — карта платы и линии LCD USB;
+- `macros.cfg` — макросы и homing override;
+- `firmware/designer_xl/klipper.bin` — отдельный путь для образа XL.
 
-The current uploaded analysis describes XL hardware with TMC2209 UART banking.
-It is not a safe install profile: the PC3 bank switching and the exact validated
-firmware image still need to be resolved. The installer therefore recognizes
-the XL selection but stops before changing printer files or MCU flash when the
-matching bundle is absent.
+Банки TMC2209 выбираются штатным Klipper через `select_pins`: PC3 выбирает
+основной банк, `!PC3` — второй. Поэтому патч драйвера TMC UART не нужен.
+
+В приложенном черновике XL описаны четыре Z-драйвера с адресами 0–3. AutoDetect
+v0.6 проверяет во втором банке только адреса 0, 1 и 3. Установщик сообщает об
+этом расхождении и спрашивает отдельное подтверждение перед заменой активного
+конфига. STEP/DIR второго Z-блока также требуют проверки на конкретной плате.
+
+USB разъём LCD подключён к PB14/PB15. В конфигурацию добавлены только имена
+линий: USB Host/MSC стек и мост передачи файлов на Raspberry пока не реализованы.
