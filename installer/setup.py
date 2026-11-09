@@ -20,7 +20,7 @@ import time
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from autodetect import DetectionError, parse_model, scan_printer
 
-INSTALLER_VERSION = '0.3.2'
+INSTALLER_VERSION = '0.3.3'
 FIRMWARE_SHA_BY_MODEL = {
     'X': '4704cc2d51ad55adbc388a45e8795644ef4992acdf39cbecdcf11c52bdf8fbb5',
     # Klipper's bank selection is a host config feature, so these model-specific
@@ -517,26 +517,34 @@ def main():
 
     was_active = subprocess.run(['systemctl', 'is-active', '--quiet', a.service]).returncode == 0
     if was_active:
+        api_error = None
+        status = None
         if not a.socket.exists():
-            raise ValueError('Klipper активен, но API-сокет отсутствует; не удалось проверить состояние печати. Укажите правильный --socket или восстановите API Klipper.')
-        try:
-            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
-                sock.settimeout(3)
-                sock.connect(str(a.socket))
-                sock.sendall(b'{"id":1,"method":"objects/query","params":{"objects":{"print_stats":null,"idle_timeout":null}}}\x03')
-                data = b''
-                while b'\x03' not in data:
-                    chunk = sock.recv(65536)
-                    if not chunk:
-                        raise ValueError('Klipper API закрыл соединение без ответа')
-                    data += chunk
-                status = json.loads(data.split(b'\x03')[0]).get('result', {}).get('status', {})
-        except (OSError, ValueError) as exc:
-            raise ValueError('Klipper активен, но API-сокет недоступен; состояние печати не подтверждено, установка остановлена до прошивки: ' + str(exc))
-        if 'print_stats' not in status or 'idle_timeout' not in status:
-            raise ValueError('Klipper API не вернул состояние печати; установка остановлена до прошивки')
-        if (status.get('print_stats', {}).get('state') in ('printing', 'paused')
-                or status.get('idle_timeout', {}).get('state') == 'Printing'):
+            api_error = 'API-сокет отсутствует: ' + str(a.socket)
+        else:
+            try:
+                with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+                    sock.settimeout(3)
+                    sock.connect(str(a.socket))
+                    sock.sendall(b'{"id":1,"method":"objects/query","params":{"objects":{"print_stats":null,"idle_timeout":null}}}\x03')
+                    data = b''
+                    while b'\x03' not in data:
+                        chunk = sock.recv(65536)
+                        if not chunk:
+                            raise ValueError('Klipper API закрыл соединение без ответа')
+                        data += chunk
+                    status = json.loads(data.split(b'\x03')[0]).get('result', {}).get('status', {})
+                if 'print_stats' not in status or 'idle_timeout' not in status:
+                    api_error = 'API не вернул состояние печати'
+            except (OSError, ValueError) as exc:
+                api_error = str(exc)
+        if api_error:
+            print('Предупреждение: не удалось проверить состояние печати через Klipper API:', api_error)
+            if not ask_yes_no(
+                    'Печать точно остановлена, движения нет, двигатели и нагреватели отключены? Продолжить без проверки API?', False):
+                raise ValueError('Установка отменена: состояние печати не подтверждено')
+        elif (status.get('print_stats', {}).get('state') in ('printing', 'paused')
+              or status.get('idle_timeout', {}).get('state') == 'Printing'):
             raise ValueError('Сначала завершите печать/движение; установка остановлена')
     else:
         print('Сервис Klipper не активен; проверка состояния через устаревший API-сокет пропущена.')
