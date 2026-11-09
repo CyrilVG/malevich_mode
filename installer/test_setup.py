@@ -69,10 +69,25 @@ class ConfigTests(unittest.TestCase):
             self.assertIn('[include macros.cfg]', planned[self.cfg])
             self.assertNotRegex(planned[self.cfg], r'(?m)^\[gcode_macro ')
             self.assertIn('[gcode_macro ', planned[self.root/'macros.cfg'])
+            if model == 'XL':
+                self.assertIn(self.root/'xl_inputs.cfg', planned)
+                self.assertIn('[include xl_inputs.cfg]', planned[self.cfg])
+                self.assertIn('[malevich_xl_inputs]',
+                              planned[self.root/'xl_inputs.cfg'])
+            else:
+                self.assertNotIn(self.root/'xl_inputs.cfg', planned)
+                self.assertNotIn('[include xl_inputs.cfg]', planned[self.cfg])
         xl = (payload/'profiles/designer_xl/printer.cfg').read_text()
         self.assertEqual(xl.count('select_pins: PC3'), 3)
         self.assertEqual(xl.count('select_pins: !PC3'), 4)
         self.assertIn('@GCODE_PATH@', xl)
+        for section in ('stepper_z1', 'stepper_z2', 'stepper_z3'):
+            body = xl.split('[' + section + ']')[1].split('[')[0]
+            self.assertNotIn('position_min:', body)
+            self.assertNotIn('position_max:', body)
+        klipper = self.root / 'klipper'
+        xl_host = s.xl_inputs_host_plan(klipper, payload)
+        self.assertIn(klipper/'klippy/extras/malevich_xl_inputs.py', xl_host)
     def test_firmware_hashes_and_detect_parse(self):
         payload = Path(__file__).resolve().parents[1]
         expected = {
