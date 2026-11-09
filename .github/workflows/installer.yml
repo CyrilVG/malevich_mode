@@ -10,6 +10,7 @@ jobs:
       - name: Test configuration migration and host transport
         run: |
           python3 installer/test_setup.py
+          python3 profiles/designer_xl/test_xl_inputs.py
           python3 panel/tests/test_host.py
           python3 -m py_compile installer/setup.py installer/restore.py
           python3 -m py_compile installer/autodetect.py

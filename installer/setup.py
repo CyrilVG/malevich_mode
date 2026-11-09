@@ -229,10 +229,16 @@ def install_profile(config, serial, gcodes, payload, model):
     macros = profile_dir / 'macros.cfg'
     if not all(path.is_file() for path in (profile, pins, macros)):
         raise ValueError('В комплекте отсутствует полный профиль Designer ' + model)
+    xl_cfg = profile_dir / 'xl_inputs.cfg'
+    if model == 'XL' and not xl_cfg.is_file():
+        raise ValueError('Профиль Designer XL: отсутствует xl_inputs.cfg')
     cfg = profile.read_text()
     if cfg.count('@MCU_SERIAL@') != 1:
         raise ValueError('Профиль Designer ' + model + ' не содержит маркер serial-порта')
-    for required_include in ('[include fluidd.cfg]', '[include board_pins.cfg]', '[include macros.cfg]'):
+    required_includes = ['[include fluidd.cfg]', '[include board_pins.cfg]', '[include macros.cfg]']
+    if model == 'XL':
+        required_includes.append('[include xl_inputs.cfg]')
+    for required_include in required_includes:
         if required_include not in cfg:
             raise ValueError('Профиль Designer ' + model + ' должен подключать ' + required_include)
     cfg = cfg.replace('@MCU_SERIAL@', serial)
@@ -281,6 +287,8 @@ def install_profile(config, serial, gcodes, payload, model):
         board_pins_path: pins.read_text(),
         macros_path: macros.read_text(),
     }
+    if model == 'XL':
+        planned[(config_dir / 'xl_inputs.cfg').resolve()] = xl_cfg.read_text()
     # Inspect the complete include tree, but preserve the source files before
     # removing any section that duplicates this profile.
     files = load_configs(config, planned)
@@ -344,6 +352,14 @@ def driver_plan(klipper, payload):
     module = (payload / 'panel/host/malevich_panel.py').read_text()
     compile(module, 'malevich_panel.py', 'exec')
     return {dest: text, dest.parent / 'malevich_panel.py': module}
+
+def xl_inputs_host_plan(klipper, payload):
+    # XL-only host plugin. Designer X installation never writes this path.
+    src = payload / 'profiles/designer_xl/malevich_xl_inputs.py'
+    module = src.read_text()
+    compile(module, str(src), 'exec')
+    return {klipper / 'klippy/extras/malevich_xl_inputs.py': module}
+
 
 def panel_bundle_plan(payload):
     source = payload / 'panel'
@@ -518,6 +534,8 @@ def main():
         install_selected_profile = not a.keep_config and nozzle_count == 'single'
         plan = profile_plans[model] if install_selected_profile else current_config_plan()
         plan.update(static_plan)
+        if model == 'XL':
+            plan.update(xl_inputs_host_plan(a.klipper, payload))
         print('Проверка комплекта Malevich Installer', INSTALLER_VERSION)
         print('Принтер: Designer', model, '| сопел:', '2' if nozzle_count == 'dual' else '1')
         print('Конфигурация:', 'профиль модели + macros.cfg' if install_selected_profile else 'текущий printer.cfg сохраняется')
@@ -681,6 +699,8 @@ def main():
         }
         planned = dict(selected_plan)
         planned.update(static_plan)
+        if printer_model == 'XL':
+            planned.update(xl_inputs_host_plan(a.klipper, payload))
         print('Принтер: Designer', printer_model, '| AutoDetect:', detected_printer or 'пропущен',
               '| сопел:', '2' if nozzle_count == 'dual' else '1')
         print('Klipper BIN SHA256:', FIRMWARE_SHA_BY_MODEL[printer_model])
