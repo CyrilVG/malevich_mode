@@ -73,15 +73,15 @@ GitHub Actions собирает и проверяет прошивку STM32F407
 
 ### One-command Raspberry Pi installation
 
-The installer targets a clean Klipper setup on Raspberry Pi 3, 4 or 5 with the STM32F407VE board. It offers host-board and printer-model choices. 
+For Klipper on Raspberry Pi 3/4/5, the installer first runs AutoDetect v0.6.0, then offers Designer X or XL with the detected model preselected. X and XL use separate profiles; XL bank selection uses Klipper's built-in `select_pins`. The installer asks whether the printer has one or two nozzles and preserves the current config for two-nozzle machines until a validated profile is available.
 
 ```bash
 bash <(wget -qO- https://raw.githubusercontent.com/CyrilVG/malevich_mode/main/install.sh)
 ```
 
-For Raspberry Pi 3/4/5, connect with power off: **header pin 23 / GPIO11 → PA14/SWCLK, pin 24 / GPIO8 → PA13/SWDIO, pin 20 → GND**. Power the STM32 board separately, leave VCC disconnected, and disable SPI0. Select Designer X or XL: X installs its firmware and configuration profile; XL stops safely until its validated bundle is published. Orange Pi 3 LTS, Orange Pi 5 and 5 Plus appear as future menu options, but are not flashed until their GPIO/SWD maps are verified.
+Connect SWD using the verified Raspberry Pi pinout, keep VCC separate, and disable SPI0. Orange Pi 3 LTS/5/5 Plus are not flashed until their GPIO and OpenOCD profiles are verified. See the [installer guide](installer/README.md) for pinout and AutoDetect details.
 
-The X profile replaces `printer.cfg` and `board_pins.cfg`; host files and the full flash are backed up first. Add `--keep-config` to preserve the existing configuration, or `--check` to review the plan without changes.
+The selected profile keeps macros in a separate `macros.cfg`; the installer backs up config files and the complete flash before writing. Use `--keep-config` to preserve the current printer config, or `--check --printer-model X|XL` to validate the bundle without flashing. USB Host/MSC support for the LCD connector is not implemented yet.
 
 [Details, pinout, options and rollback](installer/README.md).
 
