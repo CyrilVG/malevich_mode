@@ -7,6 +7,10 @@
 - `macros.cfg` — макросы и homing override;
 - `firmware/designer_xl/klipper.bin` — отдельный путь для образа XL.
 
+Для запуска XL-профиль временно использует `watermark` для экструдера (`max_delta: 1.0`) и стола (`max_delta: 2.0`), так как PID-калибровок XL пока нет. Перед печатью выполните `PID_CALIBRATE` отдельно для `extruder` и `heater_bed`, затем `SAVE_CONFIG`.
+
+`position_endstop` оси Z задан как `0.465` по профилю Designer X. Проверьте это значение на механике XL перед движением оси и печатью.
+
 Банки TMC2209 выбираются штатным Klipper через `select_pins`: PC3 выбирает
 основной банк, `!PC3` — второй. Поэтому патч драйвера TMC UART не нужен.
 
