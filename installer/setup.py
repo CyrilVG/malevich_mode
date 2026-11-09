@@ -17,8 +17,17 @@ import subprocess
 import sys
 import time
 
-FIRMWARE_SHA = '4704cc2d51ad55adbc388a45e8795644ef4992acdf39cbecdcf11c52bdf8fbb5'
-FIRMWARE_SHA_BY_MODEL = {'X': FIRMWARE_SHA, 'XL': None}
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from autodetect import DetectionError, parse_model, scan_printer
+
+INSTALLER_VERSION = '0.3.0'
+FIRMWARE_SHA_BY_MODEL = {
+    'X': '4704cc2d51ad55adbc388a45e8795644ef4992acdf39cbecdcf11c52bdf8fbb5',
+    # Klipper's bank selection is a host config feature, so these model-specific
+    # artifacts are intentionally separate paths but currently identical images.
+    'XL': '4704cc2d51ad55adbc388a45e8795644ef4992acdf39cbecdcf11c52bdf8fbb5',
+}
+AUTODETECT_SHA = '8bc01b5614f6078dd32ef8d54cb51234c24152e4f22ad206d0c666d9d2b3d79a'
 PANEL_FILES = (
     'README.md', 'display.cfg', 'install.py',
     'host/malevich_panel.py',
@@ -67,6 +76,14 @@ def ask_choice(title, options, default=None):
     if default:
         prompt += ' [Enter = ' + default + ']'
     return input(color(prompt + ': ', '93')).strip() or (default or '')
+
+
+def ask_yes_no(prompt, default=False):
+    suffix = '[Y/n]' if default else '[y/N]'
+    answer = input(color(prompt + ' ' + suffix + ': ', '93')).strip().lower()
+    if not answer:
+        return default
+    return answer in ('y', 'yes', 'д', 'да')
 
 def sections(text):
     matches = list(HEADER.finditer(text))
@@ -169,19 +186,23 @@ def plan_config(root, serial, gcodes):
         files[root] = text[:pos].rstrip() + '\n\n' + extra + '\n' + text[pos:]
     return files
 
-def install_x_profile(config, serial, gcodes, payload):
+def install_profile(config, serial, gcodes, payload, model):
     config = config.resolve()
     config_dir = config.parent
-    profile = payload / 'profiles/designer_x/printer.cfg'
-    pins = payload / 'profiles/designer_x/board_pins.cfg'
-    if not profile.is_file() or not pins.is_file():
-        raise ValueError('В комплекте отсутствует полный профиль Designer X')
+    profile_dir = payload / 'profiles' / ('designer_x' if model == 'X' else 'designer_xl')
+    profile = profile_dir / 'printer.cfg'
+    pins = profile_dir / 'board_pins.cfg'
+    macros = profile_dir / 'macros.cfg'
+    if not all(path.is_file() for path in (profile, pins, macros)):
+        raise ValueError('В комплекте отсутствует полный профиль Designer ' + model)
     cfg = profile.read_text()
     if cfg.count('@MCU_SERIAL@') != 1:
-        raise ValueError('Профиль Designer X не содержит маркер serial-порта')
-    if '[include fluidd.cfg]' not in cfg or '[include board_pins.cfg]' not in cfg:
-        raise ValueError('Профиль Designer X должен подключать fluidd.cfg и board_pins.cfg')
+        raise ValueError('Профиль Designer ' + model + ' не содержит маркер serial-порта')
+    for required_include in ('[include fluidd.cfg]', '[include board_pins.cfg]', '[include macros.cfg]'):
+        if required_include not in cfg:
+            raise ValueError('Профиль Designer ' + model + ' должен подключать ' + required_include)
     cfg = cfg.replace('@MCU_SERIAL@', serial)
+    cfg = cfg.replace('@GCODE_PATH@', str(gcodes))
     cfg = cfg.replace('/home/pi/printer_data/gcodes', str(gcodes))
     display_range = next(((start, end) for name, start, end in sections(cfg)
                           if name == 'display'), None)
@@ -192,9 +213,11 @@ def install_x_profile(config, serial, gcodes, payload):
         cfg = cfg.rstrip() + '\n\n' + DISPLAY
 
     board_pins_path = (config_dir / 'board_pins.cfg').resolve()
+    macros_path = (config_dir / 'macros.cfg').resolve()
     planned = {
         config: cfg,
         board_pins_path: pins.read_text(),
+        macros_path: macros.read_text(),
     }
     # Inspect the complete include tree, but do not rewrite fluidd.cfg: it can
     # be a symlink into fluidd-config/client.cfg, outside printer_data/config.
@@ -219,6 +242,7 @@ def install_x_profile(config, serial, gcodes, payload):
     planned = {
         config: cfg,
         board_pins_path: pins.read_text(),
+        macros_path: macros.read_text(),
     }
     files = load_configs(config, planned)
     seen = {}
@@ -228,10 +252,17 @@ def install_x_profile(config, serial, gcodes, payload):
             if name.startswith('include '):
                 continue
             if name in seen and (name in critical_sections or name.startswith('board_pins')):
-                raise ValueError('Профиль X содержит повторную секцию [' + name +
+                raise ValueError('Профиль ' + model + ' содержит повторную секцию [' + name +
                                  '] в ' + str(seen[name]) + ' и ' + str(path))
+            if name.startswith('gcode_macro ') and name in seen:
+                raise ValueError('Макрос [' + name + '] уже подключён из ' + str(seen[name]))
             seen.setdefault(name, path)
     return planned
+
+
+def install_x_profile(config, serial, gcodes, payload):
+    """Backward-compatible wrapper for the previous setup.py API."""
+    return install_profile(config, serial, gcodes, payload, 'X')
 
 def driver_plan(klipper, payload):
     dest = klipper / 'klippy/extras/display/display.py'
@@ -290,18 +321,25 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--serial', help='Точный путь /dev/serial/by-id/...')
     p.add_argument('--host-board', choices=['pi3','pi4','pi5','opi3lts','opi5','opi5plus'], help='Модель одноплатника')
-    p.add_argument('--printer-model', choices=['X','XL'], help='Модель принтера')
+    p.add_argument('--printer-model', choices=['X','XL'], help='Ручной выбор/подтверждение модели')
+    p.add_argument('--skip-autodetect', action='store_true', help='Не прошивать AutoDetect (только для ручной установки)')
+    p.add_argument('--nozzle-count', choices=['single','dual'], help='Число сопел; dual пока сохраняет текущий printer.cfg')
     config_group = p.add_mutually_exclusive_group()
-    config_group.add_argument('--install-x-config', action='store_true', help='Установить профиль Designer X из комплекта')
-    config_group.add_argument('--keep-config', action='store_true', help='Оставить текущий конфиг принтера вместо профиля X')
+    config_group.add_argument('--install-profile', action='store_true', help='Установить профиль выбранной модели')
+    config_group.add_argument('--install-x-config', dest='install_profile', action='store_true', help=argparse.SUPPRESS)
+    config_group.add_argument('--keep-config', action='store_true', help='Оставить текущий printer.cfg и обновить только MCU/панель')
     p.add_argument('--klipper', type=Path, default=Path.home() / 'klipper')
     p.add_argument('--config', type=Path, default=Path.home() / 'printer_data/config/printer.cfg')
     p.add_argument('--socket', type=Path, default=Path.home() / 'printer_data/comms/klippy.sock')
     p.add_argument('--service', default='klipper')
-    p.add_argument('--check', action='store_true', help='Проверить окружение и показать план без изменений')
+    p.add_argument('--check', action='store_true', help='Проверить комплект и выбранный профиль без прошивки/изменений')
     a = p.parse_args()
     if os.geteuid() == 0:
         raise ValueError('Запускайте от пользователя pi без sudo; sudo будет вызван для нужных операций.')
+    if a.install_profile and a.keep_config:
+        raise ValueError('--install-profile и --keep-config взаимоисключающие')
+    if a.nozzle_count == 'dual' and a.install_profile:
+        raise ValueError('Для двух сопел отдельный профиль ещё не готов; используйте --keep-config')
     try:
         detected_model = Path('/proc/device-tree/model').read_text().rstrip('\x00')
     except OSError:
@@ -310,17 +348,13 @@ def main():
         'pi3':'Raspberry Pi 3 (GPIO11 SWCLK, GPIO8 SWDIO)',
         'pi4':'Raspberry Pi 4 (GPIO11 SWCLK, GPIO8 SWDIO)',
         'pi5':'Raspberry Pi 5 (RP1 GPIO11 SWCLK, GPIO8 SWDIO)',
-        'opi3lts':'Orange Pi 3 LTS (SWD GPIO mapping not validated)',
-        'opi5':'Orange Pi 5 (SWD GPIO mapping not validated)',
-        'opi5plus':'Orange Pi 5 Plus (SWD GPIO mapping not validated)',
+        'opi3lts':'Orange Pi 3 LTS (GPIO profile not validated)',
+        'opi5':'Orange Pi 5 (GPIO profile not validated)',
+        'opi5plus':'Orange Pi 5 Plus (GPIO profile not validated)',
     }
     board_options = [
-        ('1', 'Raspberry Pi 3'),
-        ('2', 'Raspberry Pi 4'),
-        ('3', 'Raspberry Pi 5'),
-        ('4', 'Orange Pi 3 LTS'),
-        ('5', 'Orange Pi 5'),
-        ('6', 'Orange Pi 5 Plus'),
+        ('1', 'Raspberry Pi 3'), ('2', 'Raspberry Pi 4'), ('3', 'Raspberry Pi 5'),
+        ('4', 'Orange Pi 3 LTS'), ('5', 'Orange Pi 5'), ('6', 'Orange Pi 5 Plus'),
     ]
     aliases = {'1':'pi3','2':'pi4','3':'pi5','4':'opi3lts','5':'opi5','6':'opi5plus'}
     detected_board = ('pi3' if 'Raspberry Pi 3' in detected_model else
@@ -338,54 +372,32 @@ def main():
         raise ValueError('Модель одноплатника не выбрана')
     print('Одноплатник:', boards[board])
     if board.startswith('opi'):
-        print('Для этого Orange Pi пока нет проверенной распиновки и профиля GPIO для OpenOCD; флеш и конфиги не изменены.')
+        print('Для Orange Pi пока нет проверенного профиля OpenOCD; прошивка и конфиги не изменены.')
         raise ValueError('SWD пока поддержан только на Raspberry Pi 3, 4 и 5')
     print('Подключение SWD (питание выключено): Raspberry pin 23 / GPIO11 -> PA14/SWCLK;')
     print('Raspberry pin 24 / GPIO8 -> PA13/SWDIO; pin 20 -> GND. VCC не подключать.')
-    payload = Path(__file__).resolve().parents[1]
-    if a.printer_model:
-        printer_model = a.printer_model
-    elif sys.stdin.isatty():
-        printer_choice = ask_choice('Выберите модель принтера:', [
-            ('1', 'Designer X'),
-            ('2', 'Designer XL'),
-        ])
-        printer_model = {'1':'X', '2':'XL'}.get(printer_choice, printer_choice.upper())
-    else:
-        raise ValueError('Укажите модель принтера флагом --printer-model X или XL')
-    if printer_model in ('1','X'): printer_model='X'
-    elif printer_model in ('2','XL'): printer_model='XL'
-    else: raise ValueError('Модель принтера не выбрана')
-    firmware_by_model = {
-        'X': payload / 'installer/firmware.bin.b64',
-        'XL': payload / 'firmware/designer_xl/klipper.bin',
-    }
-    profile_by_model = {
-        'X': payload / 'profiles/designer_x/printer.cfg',
-        'XL': payload / 'profiles/designer_xl/printer.cfg',
-    }
-    if printer_model == 'XL':
-        missing = [path for path in (firmware_by_model['XL'], profile_by_model['XL']) if not path.is_file()]
-        raise ValueError('Designer XL выбран, но комплект XL ещё не опубликован (' +
-                         ', '.join(str(path.relative_to(payload)) for path in missing) +
-                         '). Установка остановлена до изменения файлов и прошивки.')
-    install_x_config = not a.keep_config
-    if a.install_x_config:
-        install_x_config = True
-    elif a.printer_model is None and sys.stdin.isatty() and not a.keep_config:
-        answer = input(color('Установить профиль конфигурации Designer X из комплекта? Текущие файлы будут сохранены в резервную копию [Y/n]: ', '93')).strip().lower()
-        install_x_config = answer not in ('n', 'no')
 
-    if not re.fullmatch(r'[\w@.-]+', a.service):
-        raise ValueError('Некорректное имя сервиса')
-    firmware_data = firmware_by_model[printer_model].read_bytes()
-    firmware = (base64.b64decode(firmware_data) if firmware_by_model[printer_model].suffix == '.b64'
-                else firmware_data)
-    expected_sha = FIRMWARE_SHA_BY_MODEL[printer_model]
-    if expected_sha is None:
-        raise ValueError('Для Designer ' + printer_model + ' ещё не закреплена проверенная SHA256 прошивки')
-    if hashlib.sha256(firmware).hexdigest() != expected_sha:
-        raise ValueError('Контрольная сумма BIN не совпала')
+    payload = Path(__file__).resolve().parents[1]
+    autodetect_b64 = payload / 'firmware/autodetect/autodetect.bin.b64'
+    if not autodetect_b64.is_file():
+        raise ValueError('AutoDetect v0.6.0 отсутствует или не прошёл проверку SHA256')
+    autodetect_image = base64.b64decode(autodetect_b64.read_bytes())
+    if hashlib.sha256(autodetect_image).hexdigest() != AUTODETECT_SHA:
+        raise ValueError('AutoDetect v0.6.0 отсутствует или не прошёл проверку SHA256')
+    firmware_by_model = {
+        'X': payload / 'firmware/designer_x/klipper.bin.b64',
+        'XL': payload / 'firmware/designer_xl/klipper.bin.b64',
+    }
+    for model, image in firmware_by_model.items():
+        if not image.is_file():
+            raise ValueError('Klipper firmware для Designer ' + model + ' отсутствует')
+        try:
+            image_data = base64.b64decode(image.read_bytes())
+        except ValueError:
+            raise ValueError('Klipper firmware для Designer ' + model + ' повреждён')
+        if hashlib.sha256(image_data).hexdigest() != FIRMWARE_SHA_BY_MODEL[model]:
+            raise ValueError('Klipper firmware для Designer ' + model + ' отсутствует или SHA256 не совпадает')
+
     candidates = sorted(glob.glob('/dev/serial/by-id/usb-FTDI_FT232R_USB_UART_*-if00-port0'))
     if a.serial:
         serial = a.serial
@@ -395,8 +407,16 @@ def main():
         raise ValueError('Нужен ровно один FT232R; укажите --serial /dev/serial/by-id/...')
     if not serial.startswith('/dev/serial/by-id/') or not Path(serial).exists() or any(c.isspace() for c in serial):
         raise ValueError('Некорректный или отсутствующий serial-порт')
+    if a.skip_autodetect and not a.printer_model:
+        raise ValueError('--skip-autodetect требует явный --printer-model X|XL')
+    if a.check and not a.printer_model:
+        raise ValueError('--check требует явный --printer-model X|XL; аппаратный AutoDetect не запускается')
+    if not a.check and not a.skip_autodetect and not sys.stdin.isatty():
+        raise ValueError('AutoDetect требует интерактивное подтверждение отключённых моторов/нагревателей и измерения PE14')
+
+    if not re.fullmatch(r'[\w@.-]+', a.service):
+        raise ValueError('Некорректное имя сервиса')
     cmd = run(['systemctl', 'show', a.service, '-p', 'ExecStart', '--value'], capture_output=True, text=True).stdout
-    # Inspect the loaded service, including systemd EnvironmentFile expansion.
     expanded = cmd
     envfiles = run(['systemctl', 'show', a.service, '-p', 'EnvironmentFiles', '--value'], capture_output=True, text=True).stdout
     for filename in re.findall(r'(\S+)\s+\(ignore_errors=', envfiles):
@@ -408,29 +428,48 @@ def main():
     for required in (a.klipper.resolve() / 'klippy/klippy.py', a.config.resolve(), a.socket.resolve()):
         if str(required) not in expanded:
             raise ValueError('Сервис использует другие пути; укажите --klipper/--config/--socket. ExecStart: ' + expanded)
-    # GPIO8/11 must not be owned by SPI overlays.
     if glob.glob('/dev/spidev0.*'):
         raise ValueError('SPI0 включён. Отключите SPI в raspi-config и перезагрузите Raspberry.')
+    if not (a.klipper / 'klippy/extras/display/display.py').is_file():
+        raise ValueError('Не найден Klipper host-файл klippy/extras/display/display.py')
+    if not (a.config.resolve().parent / 'fluidd.cfg').exists():
+        raise ValueError('Не найден fluidd.cfg рядом с printer.cfg')
+
     gcodes = a.config.resolve().parent.parent / 'gcodes'
-    planned = (install_x_profile(a.config, serial, gcodes, payload) if install_x_config
-               else plan_config(a.config, serial, gcodes))
-    planned.update(driver_plan(a.klipper, payload))
-    planned.update(panel_bundle_plan(payload))
-    print('Плата: STM32F407VE; одноплатник:', boards[board], '|', detected_model or board)
-    print('OpenOCD профиль:', 'Pi 5 linuxgpiod' if board == 'pi5' else 'Pi 3/4 native GPIO')
-    print('BIN v0.2.0:', expected_sha)
-    print('Принтер: Designer', printer_model, '| конфигурация:', 'профиль X из комплекта' if install_x_config else 'текущий printer.cfg сохраняется')
-    print('Serial:', serial)
-    if install_x_config:
-        print('Профиль X заменит printer.cfg и карту board_pins.cfg; прежние файлы попадут в резервную копию.')
-    else:
-        print('Существующие оси/нагреватели сохраняются; будут обновлены MCU и панель.')
-    print('Панель: полный комплект будет установлен в', Path.home() / 'panel')
-    print('Конфигурация [display]:\n' + DISPLAY.rstrip())
-    print('Файлы:', '\n'.join(str(x) for x in planned))
+    # Validate all available profiles before stopping Klipper or writing the probe image.
+    preserve_plan = plan_config(a.config, serial, gcodes)
+    profile_plans = ({model: install_profile(a.config, serial, gcodes, payload, model)
+                      for model in ('X', 'XL')} if not a.keep_config else {})
+    static_plan = driver_plan(a.klipper, payload)
+    static_plan.update(panel_bundle_plan(payload))
     if a.check:
+        model = a.printer_model
+        nozzle_count = a.nozzle_count or 'single'
+        install_profile = not a.keep_config and nozzle_count == 'single'
+        plan = profile_plans[model] if install_profile else preserve_plan
+        plan.update(static_plan)
+        print('Проверка комплекта Malevich Installer', INSTALLER_VERSION)
+        print('Принтер: Designer', model, '| сопел:', '2' if nozzle_count == 'dual' else '1')
+        print('Конфигурация:', 'профиль модели + macros.cfg' if install_profile else 'текущий printer.cfg сохраняется')
+        print('Klipper SHA256:', FIRMWARE_SHA_BY_MODEL[model])
+        print('Файлов в плане:', len(plan))
         print('Проверка завершена; изменений нет.')
         return
+
+    if not a.skip_autodetect and not ask_yes_no(
+            'Перед AutoDetect отключены шаговые двигатели и нагреватели принтера? Это обязательно для диагностического сканирования.', False):
+        raise ValueError('AutoDetect отменён до прошивки')
+
+    if a.skip_autodetect:
+        detected_printer = None
+        printer_model = a.printer_model
+    else:
+        detected_printer = None
+        printer_model = None
+
+    print('LCD USB: PB14/PB15; этот комплект пока не содержит USB Host/MSC и передачи файлов на Raspberry Pi.')
+    print('Установщик:', INSTALLER_VERSION)
+
     lock = (Path.home() / '.malevich-install.lock').open('w')
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -447,21 +486,14 @@ def main():
     for name in openocd_files:
         if not (Path('/usr/share/openocd/scripts') / name).is_file():
             raise ValueError('В OpenOCD отсутствует ' + name)
+
     stamp = datetime.datetime.now().strftime('%Y%m%d-%H%M%S-%f')
     backup = Path.home() / 'malevich-backups' / stamp
     backup.mkdir(parents=True, mode=0o700)
-    manifest = {}
-    for i, path in enumerate(planned):
-        key = 'file-' + str(i)
-        manifest[str(path)] = key if path.exists() else None
-        if path.exists():
-            shutil.copy2(path, backup / key)
-    (backup / 'files.json').write_text(json.dumps(manifest, indent=2))
     swd_cfg = SWD_PI5 if board == 'pi5' else SWD_NATIVE
     (backup / 'stm32-swd.cfg').write_text(swd_cfg)
-    (backup / 'new.bin').write_bytes(firmware)
     (backup / 'restore.py').write_text((payload / 'installer/restore.py').read_text())
-    print('Резервные копии и журнал:', backup, flush=True)
+    (backup / 'autodetect.bin').write_bytes(autodetect_image)
     if a.socket.exists():
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
             sock.settimeout(3)
@@ -475,14 +507,13 @@ def main():
                 data += chunk
             status = json.loads(data.split(b'\x03')[0]).get('result', {}).get('status', {})
             if (status.get('print_stats', {}).get('state') in ('printing', 'paused')
-                or status.get('idle_timeout', {}).get('state') == 'Printing'):
+                    or status.get('idle_timeout', {}).get('state') == 'Printing'):
                 raise ValueError('Сначала завершите печать/движение; установка остановлена')
     was_active = subprocess.run(['systemctl', 'is-active', '--quiet', a.service]).returncode == 0
-    touched = False
+    firmware_stage = 'none'
     try:
         run(['sudo', 'systemctl', 'stop', a.service])
         with (backup / 'openocd.log').open('w') as log:
-            # Halt, verify silicon/flash size, make FULL backup, then resume.
             probe = ('init; halt; '
                      'set id [mrw 0xe0042000]; '
                      'if {($id & 0xfff) != 0x413} {error "Not STM32F407/405"}; '
@@ -490,11 +521,93 @@ def main():
                      'if {$fs != 512} {error "Expected 512 KiB flash"}; '
                      'dump_image previous.bin 0x08000000 0x80000; reset run; shutdown')
             run(['sudo','openocd','-f','stm32-swd.cfg','-c',probe], cwd=backup, stdout=log, stderr=subprocess.STDOUT)
-            if (backup / 'previous.bin').stat().st_size != 524288:
-                raise ValueError('Неполная резервная копия flash')
-            touched = True
+        if (backup / 'previous.bin').stat().st_size != 524288:
+            raise ValueError('Неполная резервная копия flash')
+
+        if not a.skip_autodetect:
+            firmware_stage = 'autodetect'
+            with (backup / 'openocd.log').open('a') as log:
+                run(['sudo','openocd','-f','stm32-swd.cfg','-c',
+                     'program autodetect.bin verify reset exit 0x08000000'],
+                    cwd=backup, stdout=log, stderr=subprocess.STDOUT)
+            print('AutoDetect v0.6.0 прошит. На serial появится отчёт X/XL.', flush=True)
+            detected_printer = scan_printer(serial)
+            print('AutoDetect определил Designer', detected_printer)
+            if sys.stdin.isatty():
+                selection = ask_choice('Подтвердите модель принтера:', [
+                    ('1', 'Designer X'), ('2', 'Designer XL'),
+                ], '1' if detected_printer == 'X' else '2')
+                printer_model = {'1':'X', '2':'XL'}.get(selection)
+            else:
+                printer_model = a.printer_model or detected_printer
+            if printer_model not in ('X','XL'):
+                raise ValueError('Модель принтера не выбрана')
+            if printer_model != detected_printer:
+                print('Предупреждение: вручную выбрана версия, отличная от AutoDetect.')
+                if not sys.stdin.isatty() or input(color("Чтобы продолжить, введите модель вручную ещё раз (X/XL): ", '93')).strip().upper() != printer_model:
+                    raise ValueError('Ручное переопределение AutoDetect не подтверждено')
+        else:
+            printer_model = a.printer_model
+            print('AutoDetect пропущен по --skip-autodetect; модель выбрана вручную: Designer', printer_model)
+
+        nozzle_count = a.nozzle_count
+        if not nozzle_count and sys.stdin.isatty():
+            nozzle_count = {'1':'single','2':'dual'}.get(ask_choice('Сколько сопел у принтера?', [
+                ('1', 'Одно сопло'), ('2', 'Два сопла (пока сохраняю текущий printer.cfg)'),
+            ], '1'), 'single')
+        nozzle_count = nozzle_count or 'single'
+
+        if not a.nozzle_count and not sys.stdin.isatty():
+            nozzle_count = 'single'
+        install_selected_profile = not a.keep_config and nozzle_count == 'single'
+        if nozzle_count == 'dual':
+            print('Для двух сопел готового профиля пока нет: текущие оси, нагреватели и макросы будут сохранены.')
+        elif a.keep_config:
+            install_selected_profile = False
+        elif not a.install_profile and sys.stdin.isatty():
+            install_selected_profile = ask_yes_no(
+                'Установить профиль Designer ' + printer_model + ' (printer.cfg, board_pins.cfg, macros.cfg)?', True)
+        if printer_model == 'XL' and install_selected_profile and not a.check:
+            print('XL-профиль включает select_pins на PC3. В исходном XL-файле 4 Z-адреса, а AutoDetect v0.6 проверяет 3 адреса второго банка.')
+            if not ask_yes_no('Продолжить с этим проверочным XL-профилем и сверить результат после перезапуска?', False):
+                install_selected_profile = False
+                print('XL-конфиг сохранён без замены; установятся прошивка и панель.')
+
+        firmware = base64.b64decode(firmware_by_model[printer_model].read_bytes())
+        if hashlib.sha256(firmware).hexdigest() != FIRMWARE_SHA_BY_MODEL[printer_model]:
+            raise ValueError('Контрольная сумма BIN не совпала')
+        planned = (profile_plans[printer_model] if install_selected_profile else preserve_plan)
+        planned = dict(planned)
+        planned.update(static_plan)
+        print('Принтер: Designer', printer_model, '| AutoDetect:', detected_printer or 'пропущен',
+              '| сопел:', '2' if nozzle_count == 'dual' else '1')
+        print('Klipper BIN SHA256:', FIRMWARE_SHA_BY_MODEL[printer_model])
+        print('Конфигурация:', 'профиль модели + отдельный macros.cfg' if install_selected_profile else 'текущий printer.cfg сохраняется')
+        print('Панель: полный комплект устанавливается в', Path.home() / 'panel')
+        print('USB накопитель LCD: линии PB14/PB15 известны, стек host/MSC не включён')
+
+        manifest = {}
+        for i, path in enumerate(planned):
+            key = 'file-' + str(i)
+            manifest[str(path)] = key if path.exists() else None
+            if path.exists():
+                shutil.copy2(path, backup / key)
+        (backup / 'files.json').write_text(json.dumps(manifest, indent=2))
+        (backup / 'new.bin').write_bytes(firmware)
+        (backup / 'selection.json').write_text(json.dumps({
+            'detected_model': detected_printer,
+            'selected_model': printer_model,
+            'nozzle_count': nozzle_count,
+            'profile_installed': install_selected_profile,
+            'installer_version': INSTALLER_VERSION,
+        }, indent=2))
+        print('Резервные копии и журнал:', backup, flush=True)
+
+        firmware_stage = 'final'
+        with (backup / 'openocd.log').open('a') as log:
             run(['sudo','openocd','-f','stm32-swd.cfg','-c',
-                 'program new.bin verify reset exit 0x08000000'], cwd=backup, stdout=log, stderr=subprocess.STDOUT)
+                 'program new.bin verify reset exit 0x08000000'],
+                cwd=backup, stdout=log, stderr=subprocess.STDOUT)
         for path, text in planned.items():
             path.parent.mkdir(parents=True, exist_ok=True)
             temp = path.with_name(path.name + '.malevich-new')
@@ -508,11 +621,24 @@ def main():
         print('ГОТОВО: Klipper ready. В Fluidd проверьте HC_PANEL_STATUS.')
         print('Откат: python3', backup / 'restore.py', '--service', a.service)
     except BaseException:
-        if touched:
+        if firmware_stage == 'autodetect':
+            # Do not leave the diagnostic image installed if detection is cancelled
+            # or returns UNKNOWN. Restore the exact pre-install flash backup.
+            try:
+                subprocess.run(['sudo','systemctl','stop',a.service], check=False)
+                subprocess.run(['sudo','openocd','-f',str(backup/'stm32-swd.cfg'),'-c',
+                                'program previous.bin verify reset exit 0x08000000'],
+                               cwd=backup, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+                if was_active:
+                    subprocess.run(['sudo','systemctl','start',a.service], check=True)
+                print('Исходная прошивка восстановлена; диагностика:', backup / 'openocd.log', file=sys.stderr)
+            except (OSError, subprocess.CalledProcessError):
+                print('Не удалось восстановить старую прошивку автоматически. Klipper оставлен остановленным; откат:',
+                      backup / 'restore.py', file=sys.stderr)
+        elif firmware_stage == 'final':
             subprocess.run(['sudo','systemctl','stop',a.service])
-            print('Установка не завершена; Klipper остановлен. Откат: python3', backup / 'restore.py', '--service', a.service, file=sys.stderr)
+            print('Установка не завершена; Klipper остановлен. Откат:', backup / 'restore.py', file=sys.stderr)
         elif was_active:
-            subprocess.run(['sudo','openocd','-f',str(backup/'stm32-swd.cfg'),'-c','init; reset run; shutdown'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             subprocess.run(['sudo','systemctl','start',a.service])
         print('Диагностика:', backup / 'openocd.log', file=sys.stderr)
         raise
