@@ -82,6 +82,17 @@ def remove_section_ranges(text, ranges):
         text = text[:start] + text[end:]
     return text
 
+
+def set_config_section(text, name, block):
+    ranges = [(start, end) for section, start, end in sections(text)
+              if section == name]
+    if ranges:
+        text = remove_section_ranges(text, ranges)
+    pos = text.find('#*#')
+    if pos < 0:
+        pos = len(text)
+    return text[:pos].rstrip() + '\n\n' + block.rstrip() + '\n' + text[pos:]
+
 def run(args, **kw):
     return subprocess.run([str(x) for x in args], check=True, **kw)
 
@@ -237,36 +248,22 @@ def install_profile(config, serial, gcodes, payload, model):
 
     board_pins_path = (config_dir / 'board_pins.cfg').resolve()
     macros_path = (config_dir / 'macros.cfg').resolve()
-    planned = {
-        config: cfg,
-        board_pins_path: pins.read_text(),
-        macros_path: macros.read_text(),
-    }
-    # Inspect the complete include tree, but do not rewrite fluidd.cfg: it can
-    # be a symlink into fluidd-config/client.cfg, outside printer_data/config.
-    files = load_configs(config, planned)
-    included_sections = [name for text in files.values()
-                         for name, _, _ in sections(text)]
+    # Install the Klipper services required by the supplied macros and UI.
+    # The profile owns these sections so old Fluidd copies are removed below.
     for name, block in (
         ('virtual_sdcard', '[virtual_sdcard]\npath: ' + str(gcodes) + '\n'),
         ('pause_resume', '[pause_resume]\n'),
         ('display_status', '[display_status]\n'),
         ('respond', '[respond]\n'),
     ):
-        if name not in included_sections:
-            cfg = cfg.rstrip() + '\n\n' + block
-            included_sections.append(name)
-    virtual_sd_sections = [text[start:end] for text in files.values()
-                           for name, start, end in sections(text)
-                           if name == 'virtual_sdcard']
-    if virtual_sd_sections and not any(re.search(r'(?mi)^\s*path\s*[:=]', block)
-                                       for block in virtual_sd_sections):
-        cfg = cfg.rstrip() + '\n\n[virtual_sdcard]\npath: ' + str(gcodes) + '\n'
+        cfg = set_config_section(cfg, name, block)
     planned = {
         config: cfg,
         board_pins_path: pins.read_text(),
         macros_path: macros.read_text(),
     }
+    # Inspect the complete include tree, but preserve the source files before
+    # removing any section that duplicates this profile.
     files = load_configs(config, planned)
     owned_paths = set(planned)
     owned_sections = {
