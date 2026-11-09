@@ -1,5 +1,52 @@
 # Designer XL
 
+## Аналоговые входы XL — отдельный диагностический модуль
+
+Этот профиль содержит **только XL-специфичные файлы**:
+`malevich_xl_inputs.py` (host-плагин Klipper) и `xl_inputs.cfg`.
+Установка Designer X не включает эти файлы и не занимает его GPIO.
+
+- **PB1 (ADC1_IN9)** — аналоговый сигнал тензодатчика сопла.
+  Рост напряжения при нагрузке сопла снизу, падение при нагрузке сверху.
+- **PA0 (ADC1_IN0)** — контроль питания через делитель.
+  Однопунктовая калибровка: Fluke 26,07 В, нормализованный АЦП 0.848107,
+  значит `supply_scale: 30.739` В на единицу нормализованного отсчёта.
+- Обновление АЦП каждые 20 мс; 8 аппаратных измерений усредняются на каждое
+  сообщение. `filter_samples: 4` добавляет программное усреднение.
+- После старта базовый уровень PB1 фиксируется однократно. Для новой калибровки
+  без нагрузки используйте `MALEVICH_XL_TARE`. Автоматического «подтягивания»
+  нуля во время контакта нет.
+
+Команды Fluidd:
+
+```gcode
+MALEVICH_XL_STATUS
+MALEVICH_XL_TARE
+MALEVICH_XL_SET_THRESHOLD MV=50
+QUERY_ADC NAME="xl_loadcell_pb1"
+QUERY_ADC NAME="xl_supply_pa0"
+```
+
+Настройки в `xl_inputs.cfg`: `trigger_delta_mv` (только для диагностики),
+`trigger_direction` (`rising`, `falling`, `both`),
+`filter_samples`, `report_interval`, `warn_below`, `warn_above`,
+`supply_scale` и `adc_reference`. Moonraker также видит
+`malevich_xl_inputs` через статус Klipper.
+
+**Никакого автоматического Z-homing пока нет.** Порог `triggered` —
+только диагностический флаг хоста: это **не** `probe:z_virtual_endstop`,
+не аппаратный интерлок и не сигнал остановки двигателей. Не запускайте G28 Z,
+пока не реализован и не проверен синхронный с движением endstop на MCU.
+
+### Установка на уже работающий XL без перепрошивки
+
+Выполните на Raspberry Pi только для Designer XL. Сохраните текущие конфиги
+и положите `malevich_xl_inputs.py` в `~/klipper/klippy/extras/`, а
+`xl_inputs.cfg` — в `~/printer_data/config/`. Отключите предыдущий
+`[include xl_adc_test.cfg]` (иначе PB1 и PA0 будут заняты дважды);
+добавьте `[include xl_inputs.cfg]` в `printer.cfg`, затем `RESTART`.
+Общая прошивка STM32 и существующий драйвер энкодера не меняются.
+
 Профиль XL хранится отдельно от X:
 
 - `printer.cfg` — оси, нагреватели и периферия;
