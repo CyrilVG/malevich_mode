@@ -43,7 +43,7 @@ wget --https-only --timeout=30 --tries=3 -qO "$work/profiles/designer_xl/macros.
 (
     cd "$work"
     sha256sum -c <<'CHECKSUMS'
-9b0b9f2cde3f19bfe1a3d39167e339be406ad8a960782dbc073074dca8012f5a  installer/setup.py
+d50718da5361f86c70c7225e3aeeae8119179f5d0928a22f5b44d2f1811299ba  installer/setup.py
 e8d09934aa45e5038d5b73821ebfcb6112376663e638cccc206acc3c92e386cc  installer/restore.py
 6326e5d45220b6177c8a6d48cdfea1a7d7b65ad995d9af2b44480fac58da1657  installer/autodetect.py
 a0d4a8e6ed22daac28582c19cbca850025ea0aa53981ab4b0ff4db91f1437299  firmware/autodetect/autodetect.bin.b64
