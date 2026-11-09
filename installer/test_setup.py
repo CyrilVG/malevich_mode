@@ -1,4 +1,12 @@
 import importlib.util
+import base64
+import io
+import hashlib
+import os
+import pty
+import select
+import threading
+from contextlib import redirect_stdout
 from pathlib import Path
 import tempfile
 import unittest
@@ -51,5 +59,71 @@ class ConfigTests(unittest.TestCase):
     def test_old_virtual_pins_outside_display_rejected(self):
         self.cfg.write_text('[gcode_button test]\npin: hc165:click\n')
         with self.assertRaises(ValueError):self.plan()
+    def test_model_profiles_split_macros_and_bank_select(self):
+        payload = Path(__file__).resolve().parents[1]
+        (self.root / 'fluidd.cfg').write_text('')
+        for model in ('X', 'XL'):
+            planned = s.install_profile(self.cfg, '/dev/serial/by-id/test',
+                                        self.root/'gcodes', payload, model)
+            self.assertIn(self.root/'macros.cfg', planned)
+            self.assertIn('[include macros.cfg]', planned[self.cfg])
+            self.assertNotRegex(planned[self.cfg], r'(?m)^\[gcode_macro ')
+            self.assertIn('[gcode_macro ', planned[self.root/'macros.cfg'])
+        xl = (payload/'profiles/designer_xl/printer.cfg').read_text()
+        self.assertEqual(xl.count('select_pins: PC3'), 3)
+        self.assertEqual(xl.count('select_pins: !PC3'), 4)
+        self.assertIn('@GCODE_PATH@', xl)
+    def test_firmware_hashes_and_detect_parse(self):
+        payload = Path(__file__).resolve().parents[1]
+        expected = {
+            'firmware/designer_x/klipper.bin.b64': s.FIRMWARE_SHA_BY_MODEL['X'],
+            'firmware/designer_xl/klipper.bin.b64': s.FIRMWARE_SHA_BY_MODEL['XL'],
+            'firmware/autodetect/autodetect.bin.b64': s.AUTODETECT_SHA,
+        }
+        for relative, digest in expected.items():
+            data = base64.b64decode((payload/relative).read_bytes())
+            self.assertEqual(hashlib.sha256(data).hexdigest(), digest)
+        self.assertEqual(s.parse_model('BOARD: DESIGNER X / TMC2130 / SPI (CONFIRMED)'), 'X')
+        self.assertEqual(s.parse_model('BOARD: DESIGNER XL / TMC2209 / UART (CONFIRMED)'), 'XL')
+        self.assertIsNone(s.parse_model('BOARD: UNKNOWN (lack of reply does not identify board)'))
+    def test_autodetect_serial_protocol_once(self):
+        master, slave = pty.openpty()
+        responses = {
+            b'R': b'=== Malevich STM32F407 X/XL AutoDetect v0.6.0 ===\r\n',
+            b'E': b'[POWER] PE14 HIGH\r\n',
+            b'P': b'PASSIVE runs=1 PB10=1 B1 PC3=1 PB10=1 B0 PC3=0 PB10=1\r\n',
+            b'A': b'ARMED. Y runs ONE X/XL autodetection\r\n',
+            b'Y': b'BOARD: DESIGNER XL / TMC2209 / UART (CONFIRMED)\r\nNo additional active scans without power-cycle\r\n',
+        }
+        stop = threading.Event()
+        def emulate():
+            while not stop.is_set():
+                ready, _, _ = select.select([master], [], [], 0.2)
+                if not ready:
+                    continue
+                try:
+                    data = os.read(master, 32)
+                except OSError:
+                    return
+                for byte in data:
+                    response = responses.get(bytes([byte]))
+                    if response:
+                        os.write(master, response)
+                    if byte == ord('X'):
+                        stop.set()
+                        return
+        thread = threading.Thread(target=emulate, daemon=True)
+        thread.start()
+        capture = io.BytesIO()
+        stream = io.TextIOWrapper(capture, encoding='utf-8')
+        try:
+            with redirect_stdout(stream):
+                model = s.scan_printer(os.ttyname(slave), confirm_voltage=lambda _prompt: 'y', timeout=3)
+            self.assertEqual(model, 'XL')
+        finally:
+            stop.set()
+            thread.join(1)
+            os.close(master)
+            os.close(slave)
 
 if __name__=='__main__':unittest.main()
