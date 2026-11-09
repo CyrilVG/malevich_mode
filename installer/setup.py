@@ -20,7 +20,7 @@ import time
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from autodetect import DetectionError, parse_model, scan_printer
 
-INSTALLER_VERSION = '0.3.0'
+INSTALLER_VERSION = '0.3.1'
 FIRMWARE_SHA_BY_MODEL = {
     'X': '4704cc2d51ad55adbc388a45e8795644ef4992acdf39cbecdcf11c52bdf8fbb5',
     # Klipper's bank selection is a host config feature, so these model-specific
@@ -58,6 +58,29 @@ transport select swd
 source [find target/stm32f4x.cfg]
 reset_config none
 '''
+
+
+class InstallPlan(dict):
+    """File changes plus existing config files that need adjacent backups."""
+    def __init__(self, *args, backup_paths=(), **kwargs):
+        super().__init__(*args, **kwargs)
+        self.backup_paths = set(backup_paths)
+
+
+def cfg_backup_path(path):
+    path = Path(path)
+    candidate = path.with_name(path.name + '.backup')
+    suffix = 1
+    while candidate.exists():
+        candidate = path.with_name(path.name + '.backup.' + str(suffix))
+        suffix += 1
+    return candidate
+
+
+def remove_section_ranges(text, ranges):
+    for start, end in sorted(ranges, reverse=True):
+        text = text[:start] + text[end:]
+    return text
 
 def run(args, **kw):
     return subprocess.run([str(x) for x in args], check=True, **kw)
@@ -245,6 +268,35 @@ def install_profile(config, serial, gcodes, payload, model):
         macros_path: macros.read_text(),
     }
     files = load_configs(config, planned)
+    owned_paths = set(planned)
+    owned_sections = {
+        name
+        for path, text in planned.items()
+        for name, _, _ in sections(text)
+        if not name.startswith('include ')
+    }
+    external_seen = set()
+    backup_paths = {path for path in owned_paths if path.exists()}
+    for path, text in files.items():
+        if path in owned_paths:
+            continue
+        local_seen = set()
+        conflicts = []
+        for name, start, end in sections(text):
+            if name.startswith('include '):
+                continue
+            if name in owned_sections or name in external_seen or name in local_seen:
+                conflicts.append((start, end))
+            else:
+                local_seen.add(name)
+        if conflicts:
+            planned[path] = remove_section_ranges(text, conflicts)
+            backup_paths.add(path)
+        external_seen.update(local_seen)
+
+    # Profile-owned sections take precedence over old Fluidd/client macros and
+    # any other included definitions. Preserve each affected source as *.cfg.backup.
+    files = load_configs(config, planned)
     seen = {}
     critical_sections = {'display', 'mcu'}
     for path, text in files.items():
@@ -257,7 +309,7 @@ def install_profile(config, serial, gcodes, payload, model):
             if name.startswith('gcode_macro ') and name in seen:
                 raise ValueError('Макрос [' + name + '] уже подключён из ' + str(seen[name]))
             seen.setdefault(name, path)
-    return planned
+    return InstallPlan(planned, backup_paths=backup_paths)
 
 
 def install_x_profile(config, serial, gcodes, payload):
@@ -437,7 +489,9 @@ def main():
 
     gcodes = a.config.resolve().parent.parent / 'gcodes'
     # Validate all available profiles before stopping Klipper or writing the probe image.
-    preserve_plan = plan_config(a.config, serial, gcodes)
+    def current_config_plan():
+        return plan_config(a.config, serial, gcodes)
+
     profile_plans = ({model: install_profile(a.config, serial, gcodes, payload, model)
                       for model in ('X', 'XL')} if not a.keep_config else {})
     static_plan = driver_plan(a.klipper, payload)
@@ -446,13 +500,17 @@ def main():
         model = a.printer_model
         nozzle_count = a.nozzle_count or 'single'
         install_selected_profile = not a.keep_config and nozzle_count == 'single'
-        plan = profile_plans[model] if install_selected_profile else preserve_plan
+        plan = profile_plans[model] if install_selected_profile else current_config_plan()
         plan.update(static_plan)
         print('Проверка комплекта Malevich Installer', INSTALLER_VERSION)
         print('Принтер: Designer', model, '| сопел:', '2' if nozzle_count == 'dual' else '1')
         print('Конфигурация:', 'профиль модели + macros.cfg' if install_selected_profile else 'текущий printer.cfg сохраняется')
         print('Klipper SHA256:', FIRMWARE_SHA_BY_MODEL[model])
         print('Файлов в плане:', len(plan))
+        if isinstance(plan, InstallPlan) and plan.backup_paths:
+            print('Будут сохранены резервные копии конфигов:')
+            for path in sorted(plan.backup_paths):
+                print(' ', path, '->', cfg_backup_path(path))
         print('Проверка завершена; изменений нет.')
         return
 
@@ -577,8 +635,16 @@ def main():
         firmware = base64.b64decode(firmware_by_model[printer_model].read_bytes())
         if hashlib.sha256(firmware).hexdigest() != FIRMWARE_SHA_BY_MODEL[printer_model]:
             raise ValueError('Контрольная сумма BIN не совпала')
-        planned = (profile_plans[printer_model] if install_selected_profile else preserve_plan)
-        planned = dict(planned)
+        selected_plan = (profile_plans[printer_model] if install_selected_profile
+                         else current_config_plan())
+        cfg_backup_paths = (selected_plan.backup_paths
+                            if isinstance(selected_plan, InstallPlan) else set())
+        cfg_backup_moves = {
+            path: cfg_backup_path(path)
+            for path in cfg_backup_paths
+            if path.exists()
+        }
+        planned = dict(selected_plan)
         planned.update(static_plan)
         print('Принтер: Designer', printer_model, '| AutoDetect:', detected_printer or 'пропущен',
               '| сопел:', '2' if nozzle_count == 'dual' else '1')
@@ -586,6 +652,11 @@ def main():
         print('Конфигурация:', 'профиль модели + отдельный macros.cfg' if install_selected_profile else 'текущий printer.cfg сохраняется')
         print('Панель: полный комплект устанавливается в', Path.home() / 'panel')
         print('USB накопитель LCD: линии PB14/PB15 известны, стек host/MSC не включён')
+        if cfg_backup_moves:
+            print('Перед заменой конфиги будут сохранены рядом:')
+            for path, backup_path in sorted(cfg_backup_moves.items()):
+                print(' ', path, '->', backup_path)
+            print('Конфликтующие секции из подключённых файлов будут удалены из активных копий; версии профиля останутся активными.')
 
         manifest = {}
         for i, path in enumerate(planned):
@@ -609,12 +680,19 @@ def main():
             run(['sudo','openocd','-f','stm32-swd.cfg','-c',
                  'program new.bin verify reset exit 0x08000000'],
                 cwd=backup, stdout=log, stderr=subprocess.STDOUT)
+        for path, backup_path in cfg_backup_moves.items():
+            if not path.exists():
+                raise ValueError('Исходный конфиг исчез до сохранения: ' + str(path))
+            os.replace(path, backup_path)
+            print('Сохранена копия конфига:', backup_path)
         for path, text in planned.items():
             path.parent.mkdir(parents=True, exist_ok=True)
             temp = path.with_name(path.name + '.malevich-new')
             temp.write_text(text)
             if path.exists():
                 shutil.copymode(path, temp)
+            elif path in cfg_backup_moves and cfg_backup_moves[path].exists():
+                shutil.copymode(cfg_backup_moves[path], temp)
             os.replace(temp, path)
         gcodes.mkdir(parents=True, exist_ok=True)
         run(['sudo','systemctl','start',a.service])
