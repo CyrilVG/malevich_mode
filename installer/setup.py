@@ -445,12 +445,12 @@ def main():
     if a.check:
         model = a.printer_model
         nozzle_count = a.nozzle_count or 'single'
-        install_profile = not a.keep_config and nozzle_count == 'single'
-        plan = profile_plans[model] if install_profile else preserve_plan
+        install_selected_profile = not a.keep_config and nozzle_count == 'single'
+        plan = profile_plans[model] if install_selected_profile else preserve_plan
         plan.update(static_plan)
         print('Проверка комплекта Malevich Installer', INSTALLER_VERSION)
         print('Принтер: Designer', model, '| сопел:', '2' if nozzle_count == 'dual' else '1')
-        print('Конфигурация:', 'профиль модели + macros.cfg' if install_profile else 'текущий printer.cfg сохраняется')
+        print('Конфигурация:', 'профиль модели + macros.cfg' if install_selected_profile else 'текущий printer.cfg сохраняется')
         print('Klipper SHA256:', FIRMWARE_SHA_BY_MODEL[model])
         print('Файлов в плане:', len(plan))
         print('Проверка завершена; изменений нет.')
