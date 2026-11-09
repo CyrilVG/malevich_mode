@@ -531,7 +531,8 @@ def main():
                      'program autodetect.bin verify reset exit 0x08000000'],
                     cwd=backup, stdout=log, stderr=subprocess.STDOUT)
             print('AutoDetect v0.6.0 прошит. На serial появится отчёт X/XL.', flush=True)
-            detected_printer = scan_printer(serial)
+            detected_printer = scan_printer(
+                serial, confirm_voltage=lambda prompt: input(color(prompt, '93')))
             print('AutoDetect определил Designer', detected_printer)
             if sys.stdin.isatty():
                 selection = ask_choice('Подтвердите модель принтера:', [
