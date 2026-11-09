@@ -43,7 +43,7 @@ wget --https-only --timeout=30 --tries=3 -qO "$work/profiles/designer_xl/macros.
 (
     cd "$work"
     sha256sum -c <<'CHECKSUMS'
-080325cec0dc38f862f1af975ea1eb8eacbc4a5b454d50e363f8c759ff5b58ea  installer/setup.py
+e95546b664b998c17761d26e89e0bcc78bd3726f1027b42a6826fcbb7dbdef41  installer/setup.py
 e8d09934aa45e5038d5b73821ebfcb6112376663e638cccc206acc3c92e386cc  installer/restore.py
 6326e5d45220b6177c8a6d48cdfea1a7d7b65ad995d9af2b44480fac58da1657  installer/autodetect.py
 a0d4a8e6ed22daac28582c19cbca850025ea0aa53981ab4b0ff4db91f1437299  firmware/autodetect/autodetect.bin.b64
@@ -65,7 +65,7 @@ b0c5fc1075a218bc4ef4a5e56be4815e71216729f51e34751afc00e83fa3800c  panel/tests/st
 c4f51641fcd4df555611db054ba70ff429fc5daa8e365bf4d5473ef1a23fade7  profiles/designer_x/printer.cfg
 a950e13753e4dd67864218a463479800f5247a1df84b47580150c8c474f77eae  profiles/designer_x/board_pins.cfg
 f94a14b2baad3b2b51d73adb2a220979f58b17894931c88cd20994576ecc3dc5  profiles/designer_x/macros.cfg
-e2f9ffb8f1a6d920483a1c25b38292c11cf06da288f621fea4c853d2fc57d5c8  profiles/designer_xl/printer.cfg
+eccbffd49b6ed0981a5247606a92341985ae0838f2f564d523c4582e5ea0885d  profiles/designer_xl/printer.cfg
 10dee91457082cc9b2ac92551f95c2f24811500d1c5b22a07a164671162c9b11  profiles/designer_xl/board_pins.cfg
 a4f14ea3b9099179776b98fb125ef48f34aaea8e8aac4152d6cc5f1897c6a7b6  profiles/designer_xl/macros.cfg
 CHECKSUMS
