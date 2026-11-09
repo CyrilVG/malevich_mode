@@ -13,11 +13,16 @@ trap 'rm -rf -- "$work"' EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 base="https://raw.githubusercontent.com/CyrilVG/malevich_mode/main"
-mkdir -p "$work/installer" "$work/profiles/designer_x"
+mkdir -p "$work/installer" "$work/firmware/autodetect" \
+    "$work/firmware/designer_x" "$work/firmware/designer_xl" \
+    "$work/profiles/designer_x" "$work/profiles/designer_xl"
 echo 'Загружаю проверенный комплект Malevich…'
 wget --https-only --timeout=30 --tries=3 -qO "$work/installer/setup.py" "$base/installer/setup.py"
 wget --https-only --timeout=30 --tries=3 -qO "$work/installer/restore.py" "$base/installer/restore.py"
-wget --https-only --timeout=30 --tries=3 -qO "$work/installer/firmware.bin.b64" "$base/installer/firmware.bin.b64"
+wget --https-only --timeout=30 --tries=3 -qO "$work/installer/autodetect.py" "$base/installer/autodetect.py"
+wget --https-only --timeout=30 --tries=3 -qO "$work/firmware/autodetect/autodetect.bin.b64" "$base/firmware/autodetect/autodetect.bin.b64"
+wget --https-only --timeout=30 --tries=3 -qO "$work/firmware/designer_x/klipper.bin.b64" "$base/firmware/designer_x/klipper.bin.b64"
+wget --https-only --timeout=30 --tries=3 -qO "$work/firmware/designer_xl/klipper.bin.b64" "$base/firmware/designer_xl/klipper.bin.b64"
 panel_files=(
     README.md display.cfg install.py host/malevich_panel.py
     src/malevich_panel.c src/malevich_logo.h
@@ -31,12 +36,19 @@ for relative in "${panel_files[@]}"; do
 done
 wget --https-only --timeout=30 --tries=3 -qO "$work/profiles/designer_x/printer.cfg" "$base/profiles/designer_x/printer.cfg"
 wget --https-only --timeout=30 --tries=3 -qO "$work/profiles/designer_x/board_pins.cfg" "$base/profiles/designer_x/board_pins.cfg"
+wget --https-only --timeout=30 --tries=3 -qO "$work/profiles/designer_x/macros.cfg" "$base/profiles/designer_x/macros.cfg"
+wget --https-only --timeout=30 --tries=3 -qO "$work/profiles/designer_xl/printer.cfg" "$base/profiles/designer_xl/printer.cfg"
+wget --https-only --timeout=30 --tries=3 -qO "$work/profiles/designer_xl/board_pins.cfg" "$base/profiles/designer_xl/board_pins.cfg"
+wget --https-only --timeout=30 --tries=3 -qO "$work/profiles/designer_xl/macros.cfg" "$base/profiles/designer_xl/macros.cfg"
 (
     cd "$work"
     sha256sum -c <<'CHECKSUMS'
-dd4244ba5b283fd94f4e640dbd8da5fc67cdf037b2e23cd1640d39afd8dd705c  installer/setup.py
+9b0b9f2cde3f19bfe1a3d39167e339be406ad8a960782dbc073074dca8012f5a  installer/setup.py
 e8d09934aa45e5038d5b73821ebfcb6112376663e638cccc206acc3c92e386cc  installer/restore.py
-daf5d90eaa375f30f17d5bdbf696514cb50500c30df3824f50fc905f264d3546  installer/firmware.bin.b64
+6326e5d45220b6177c8a6d48cdfea1a7d7b65ad995d9af2b44480fac58da1657  installer/autodetect.py
+a0d4a8e6ed22daac28582c19cbca850025ea0aa53981ab4b0ff4db91f1437299  firmware/autodetect/autodetect.bin.b64
+59e2888bb4443caf92a5607551eb8e9cacecaa813eb6c57e42b4b4bd6857671f  firmware/designer_x/klipper.bin.b64
+59e2888bb4443caf92a5607551eb8e9cacecaa813eb6c57e42b4b4bd6857671f  firmware/designer_xl/klipper.bin.b64
 96b28629918f69b0cc3bdb6ca871e47ff7141d8c050e94cc760898b5592f73db  panel/README.md
 0e27799af067e74c3a81be864b80a1124e66082e5d3c0f1702f308eb9126cf40  panel/display.cfg
 3f27a53e0483ac3336248bd4e684def1a63d84499edc223be2a10d1f9f94eaba  panel/install.py
@@ -50,8 +62,12 @@ c370744a0b556ecca290164b5f842d12e90f03dda495898ae66c2511e54d29b8  panel/tests/st
 ca9da56c430be14685e8704a216d7ccf1e7fca15c7d1ca5682e6a7e63ab2370d  panel/tests/stubs/board/misc.h
 c95f936ca2b503179828105bc4befc43674dde3087c1e16fee1312e27283e108  panel/tests/stubs/command.h
 b0c5fc1075a218bc4ef4a5e56be4815e71216729f51e34751afc00e83fa3800c  panel/tests/stubs/sched.h
-545a5df839e46e894377c402c81b115ec27b2dd44f198ac11b13d775a1c20818  profiles/designer_x/printer.cfg
-f7cfaa1c676f9101a5faaf6ebd53d8d31895cda262a184503612deea4b259f9c  profiles/designer_x/board_pins.cfg
+c4f51641fcd4df555611db054ba70ff429fc5daa8e365bf4d5473ef1a23fade7  profiles/designer_x/printer.cfg
+a950e13753e4dd67864218a463479800f5247a1df84b47580150c8c474f77eae  profiles/designer_x/board_pins.cfg
+f94a14b2baad3b2b51d73adb2a220979f58b17894931c88cd20994576ecc3dc5  profiles/designer_x/macros.cfg
+e2f9ffb8f1a6d920483a1c25b38292c11cf06da288f621fea4c853d2fc57d5c8  profiles/designer_xl/printer.cfg
+10dee91457082cc9b2ac92551f95c2f24811500d1c5b22a07a164671162c9b11  profiles/designer_xl/board_pins.cfg
+a4f14ea3b9099179776b98fb125ef48f34aaea8e8aac4152d6cc5f1897c6a7b6  profiles/designer_xl/macros.cfg
 CHECKSUMS
 )
 python3 "$work/installer/setup.py" "$@"
