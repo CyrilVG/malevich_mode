@@ -20,7 +20,7 @@ import time
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from autodetect import DetectionError, parse_model, scan_printer
 
-INSTALLER_VERSION = '0.3.3'
+INSTALLER_VERSION = '0.3.4'
 FIRMWARE_SHA_BY_MODEL = {
     'X': '4704cc2d51ad55adbc388a45e8795644ef4992acdf39cbecdcf11c52bdf8fbb5',
     # Klipper's bank selection is a host config feature, so these model-specific
@@ -245,6 +245,25 @@ def install_profile(config, serial, gcodes, payload, model):
         cfg = cfg[:start] + DISPLAY + '\n' + cfg[end:]
     else:
         cfg = cfg.rstrip() + '\n\n' + DISPLAY
+
+    profile_sections = {
+        name: cfg[start:end]
+        for name, start, end in sections(cfg)
+        if not name.startswith('include ')
+    }
+    for name in ('extruder', 'heater_bed'):
+        block = profile_sections.get(name)
+        control = re.search(r'(?mi)^\s*control\s*[:=]\s*(pid|watermark)\s*$', block or '')
+        if not control:
+            raise ValueError('Профиль Designer ' + model + ': в секции [' + name + '] должен быть задан control: pid или watermark')
+        if control.group(1).lower() == 'pid':
+            missing = [key for key in ('pid_Kp', 'pid_Ki', 'pid_Kd')
+                       if not re.search(r'(?mi)^\s*' + key + r'\s*[:=]', block)]
+            if missing:
+                raise ValueError('Профиль Designer ' + model + ': в секции [' + name + '] отсутствуют PID-параметры ' + ', '.join(missing))
+    z_block = profile_sections.get('stepper_z')
+    if z_block and not re.search(r'(?mi)^\s*position_endstop\s*[:=]', z_block):
+        raise ValueError('Профиль Designer ' + model + ': в секции [stepper_z] отсутствует position_endstop')
 
     board_pins_path = (config_dir / 'board_pins.cfg').resolve()
     macros_path = (config_dir / 'macros.cfg').resolve()
@@ -643,6 +662,7 @@ def main():
                 'Установить профиль Designer ' + printer_model + ' (printer.cfg, board_pins.cfg, macros.cfg)?', True)
         if printer_model == 'XL' and install_selected_profile and not a.check:
             print('XL-профиль включает select_pins на PC3. В исходном XL-файле 4 Z-адреса, а AutoDetect v0.6 проверяет 3 адреса второго банка.')
+            print('Нагреватели XL установлены на watermark до индивидуальной PID-калибровки; перед печатью выполните PID_CALIBRATE для extruder и heater_bed.')
             if not ask_yes_no('Продолжить с этим проверочным XL-профилем и сверить результат после перезапуска?', False):
                 install_selected_profile = False
                 print('XL-конфиг сохранён без замены; установятся прошивка и панель.')
