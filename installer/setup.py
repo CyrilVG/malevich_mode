@@ -19,8 +19,9 @@ import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from autodetect import DetectionError, parse_model, scan_printer
+from diag_guard.patch_homing import patch_homing
 
-INSTALLER_VERSION = '0.3.4'
+INSTALLER_VERSION = '0.3.6'
 FIRMWARE_SHA_BY_MODEL = {
     'X': '4704cc2d51ad55adbc388a45e8795644ef4992acdf39cbecdcf11c52bdf8fbb5',
     # Klipper's bank selection is a host config feature, so these model-specific
@@ -227,7 +228,11 @@ def install_profile(config, serial, gcodes, payload, model):
     profile = profile_dir / 'printer.cfg'
     pins = profile_dir / 'board_pins.cfg'
     macros = profile_dir / 'macros.cfg'
-    if not all(path.is_file() for path in (profile, pins, macros)):
+    xl_z_cfg = profile_dir / 'xl_z_probe.cfg'
+    required_profile_files = (profile, pins, macros)
+    if model == 'XL':
+        required_profile_files += (xl_z_cfg,)
+    if not all(path.is_file() for path in required_profile_files):
         raise ValueError('В комплекте отсутствует полный профиль Designer ' + model)
     cfg = profile.read_text()
     if cfg.count('@MCU_SERIAL@') != 1:
@@ -235,6 +240,22 @@ def install_profile(config, serial, gcodes, payload, model):
     for required_include in ('[include fluidd.cfg]', '[include board_pins.cfg]', '[include macros.cfg]'):
         if required_include not in cfg:
             raise ValueError('Профиль Designer ' + model + ' должен подключать ' + required_include)
+    if model == 'XL' and '[include xl_z_probe.cfg]' not in cfg:
+        raise ValueError('Профиль Designer XL должен подключать [include xl_z_probe.cfg]')
+    if model == 'XL':
+        macro_text = macros.read_text()
+        probe_text = xl_z_cfg.read_text()
+        if not any(name == 'gcode_macro G28' for name, _, _ in sections(macro_text)):
+            raise ValueError('Профиль Designer XL должен включать макрос [gcode_macro G28]')
+        if not any(name == 'malevich_xl_z_probe' for name, _, _ in sections(probe_text)):
+            raise ValueError('В xl_z_probe.cfg отсутствует [malevich_xl_z_probe]')
+        z_block = next((probe_text[start:end] for name, start, end in sections(probe_text)
+                        if name == 'malevich_xl_z_probe'), '')
+        if not re.search(r'(?mi)^\s*sensor_pin\s*[:=]\s*PB1\s*$', z_block):
+            raise ValueError('Профиль Designer XL ожидает PB1 для Z-probe')
+        if not re.search(r'(?mi)^\s*endstop_pin\s*[:=]\s*malevich_xl_z_probe:virtual_endstop\s*$',
+                         cfg):
+            raise ValueError('Профиль Designer XL должен использовать PB1 virtual_endstop для Z')
     cfg = cfg.replace('@MCU_SERIAL@', serial)
     cfg = cfg.replace('@GCODE_PATH@', str(gcodes))
     cfg = cfg.replace('/home/pi/printer_data/gcodes', str(gcodes))
@@ -281,6 +302,8 @@ def install_profile(config, serial, gcodes, payload, model):
         board_pins_path: pins.read_text(),
         macros_path: macros.read_text(),
     }
+    if model == 'XL':
+        planned[(config_dir / 'xl_z_probe.cfg').resolve()] = xl_z_cfg.read_text()
     # Inspect the complete include tree, but preserve the source files before
     # removing any section that duplicates this profile.
     files = load_configs(config, planned)
@@ -301,7 +324,8 @@ def install_profile(config, serial, gcodes, payload, model):
         for name, start, end in sections(text):
             if name.startswith('include '):
                 continue
-            if name in owned_sections or name in external_seen or name in local_seen:
+            if (name in owned_sections or name in external_seen or name in local_seen
+                    or (model == 'XL' and name == 'homing_override')):
                 conflicts.append((start, end))
             else:
                 local_seen.add(name)
@@ -331,6 +355,124 @@ def install_profile(config, serial, gcodes, payload, model):
 def install_x_profile(config, serial, gcodes, payload):
     """Backward-compatible wrapper for the previous setup.py API."""
     return install_profile(config, serial, gcodes, payload, 'X')
+
+def diag_guard_compatibility(config, staged=None):
+    """Return whether the active config exposes the supported X/Y/E topology."""
+    files = load_configs(config, staged)
+    found = {}
+    for path, text in files.items():
+        for name, start, end in sections(text):
+            if not name.startswith('include '):
+                found.setdefault(name.lower(), []).append((path, text[start:end]))
+
+    def option(section, key):
+        entries = found.get(section.lower(), [])
+        if len(entries) != 1:
+            return None
+        match = re.search(r'(?mi)^\s*' + re.escape(key) + r'\s*[:=]\s*([^#;\n]+)',
+                          entries[0][1])
+        return match.group(1).strip() if match else None
+
+    required = ('tmc2209 stepper_x', 'tmc2209 stepper_y', 'tmc2209 extruder')
+    missing = [name for name in required if len(found.get(name, [])) != 1]
+    if missing:
+        return False, 'нужны секции ' + ', '.join('[' + name + ']' for name in missing)
+    for axis in ('x', 'y'):
+        diag_pin = option('tmc2209 stepper_' + axis, 'diag_pin')
+        endstop = option('stepper_' + axis, 'endstop_pin')
+        if not diag_pin:
+            return False, 'в [tmc2209 stepper_' + axis + '] не задан diag_pin'
+        expected = 'tmc2209_stepper_' + axis + ':virtual_endstop'
+        if (not endstop or re.sub(r'\s+', '', endstop).lower() != expected):
+            return False, '[stepper_' + axis + '] должен использовать ' + expected
+    kinematics = (option('printer', 'kinematics') or '').lower()
+    if kinematics not in ('corexy', 'cartesian'):
+        return False, 'поддерживаются только CoreXY/Cartesian с sensorless X/Y'
+    return True, 'TMC2209 X/Y/E и sensorless X/Y найдены'
+
+def ensure_guard_include(text):
+    import_re = re.compile(r'(?mi)^\s*\[include\s+malevich_diag_guard\.cfg\s*\]\s*(?:[#;].*)?$')
+    if import_re.search(text):
+        return text
+    pos = text.find('#*#')
+    if pos < 0:
+        pos = len(text)
+    return text[:pos].rstrip() + '\n\n[include malevich_diag_guard.cfg]\n' + text[pos:]
+
+def xl_z_probe_plan(printer_model, klipper, payload, profile_active=False,
+                    skip_module=False):
+    """Stage the PB1 host module when the XL profile activates its config."""
+    if printer_model != 'XL':
+        return {}, False
+    if skip_module:
+        if profile_active:
+            raise ValueError('--skip-xl-z-probe-module нельзя использовать с активным XL-профилем: он включает xl_z_probe.cfg и G28')
+        return {}, False
+    source = payload / 'installer/xl_addons/malevich_xl_z_probe.py'
+    if not source.is_file():
+        raise ValueError('В комплекте отсутствует XL PB1 host-модуль')
+    destination = (klipper / 'klippy/extras/malevich_xl_z_probe.py').resolve()
+    if destination.exists():
+        existing = destination.read_text(errors='replace')
+        markers = ('# XL_PREHOME_CLEAR_AND_PROBE_XY_FIX_V3',
+                   '# XL_DUAL_STAGE_STANDARD_PROBE_V1',
+                   '# XL_TWO_STAGE_Z_HOME_V1')
+        if not all(marker in existing for marker in markers):
+            raise ValueError('Найден другой malevich_xl_z_probe.py; он сохранён. Удалите его вручную или пропустите модуль через --skip-xl-z-probe-module.')
+    if profile_active:
+        trigger_analog = (klipper / 'klippy/extras/trigger_analog.py').resolve()
+        if not trigger_analog.is_file():
+            raise ValueError('XL-профиль включает PB1 Z-homing, но не найден host-файл ' + str(trigger_analog) + '. Установите совместимый trigger_analog.py для Klipper v0.2.0; прошивка MCU при этом не меняется.')
+    return {destination: source.read_text()}, True
+
+def diag_guard_plan(config, klipper, payload, staged, mode):
+    if mode == 'off':
+        return {}, False, 'пропущен параметром --diag-guard off'
+    compatible, reason = diag_guard_compatibility(config, staged)
+    if not compatible:
+        if mode == 'on':
+            raise ValueError('DIAG Guard несовместим с активным конфигом: ' + reason)
+        return {}, False, reason
+
+    source_dir = payload / 'installer/diag_guard'
+    required_sources = ('patch_homing.py', 'malevich_diag_guard.py',
+                        'malevich_diag_guard.cfg')
+    if not all((source_dir / name).is_file() for name in required_sources):
+        raise ValueError('В комплекте отсутствуют файлы Malevich DIAG Guard')
+    homing = (klipper / 'klippy/extras/homing.py').resolve()
+    if not homing.is_file():
+        raise ValueError('Не найден Klipper host-файл ' + str(homing))
+    try:
+        patched_homing = patch_homing(homing.read_text())
+    except ValueError as exc:
+        raise ValueError('DIAG Guard не может безопасно патчить homing.py: ' + str(exc))
+
+    config = config.resolve()
+    guard_cfg = (config.parent / 'malevich_diag_guard.cfg').resolve()
+    staged = {Path(path).resolve(): value for path, value in staged.items()}
+    tree = load_configs(config, staged)
+    existing = []
+    for path, text in tree.items():
+        for name, start, end in sections(text):
+            if name.lower() == 'malevich_diag_guard':
+                existing.append((path, text[start:end]))
+            elif name.lower() == 'malevich_xl_diag_guard':
+                raise ValueError('Найден старый XL DIAG Guard. Сначала откатите его отдельным rollback.sh.')
+    if existing and (len(existing) != 1 or existing[0][0] != guard_cfg):
+        raise ValueError('Секция [malevich_diag_guard] уже задана в пользовательском конфиге; удалите дубликат или подключите штатный файл.')
+
+    root_text = staged[config] if config in staged else config.read_text()
+    planned = {
+        homing: patched_homing,
+        (klipper / 'klippy/extras/malevich_diag_guard.py').resolve():
+            (source_dir / 'malevich_diag_guard.py').read_text(),
+        config: ensure_guard_include(root_text),
+    }
+    if existing:
+        planned[guard_cfg] = staged.get(guard_cfg, guard_cfg.read_text())
+    else:
+        planned[guard_cfg] = (source_dir / 'malevich_diag_guard.cfg').read_text()
+    return planned, True, reason
 
 def driver_plan(klipper, payload):
     dest = klipper / 'klippy/extras/display/display.py'
@@ -396,6 +538,8 @@ def main():
     config_group.add_argument('--install-profile', action='store_true', help='Установить профиль выбранной модели')
     config_group.add_argument('--install-x-config', dest='install_profile', action='store_true', help=argparse.SUPPRESS)
     config_group.add_argument('--keep-config', action='store_true', help='Оставить текущий printer.cfg и обновить только MCU/панель')
+    p.add_argument('--diag-guard', choices=['auto','on','off'], default='auto', help='DIAG Guard: auto по фактическим TMC2209 X/Y/E и pin-конфигу (по умолчанию), on или off')
+    p.add_argument('--skip-xl-z-probe-module', action='store_true', help='Не копировать PB1 Z-probe для XL; доступно только при сохранении текущего конфига')
     p.add_argument('--klipper', type=Path, default=Path.home() / 'klipper')
     p.add_argument('--config', type=Path, default=Path.home() / 'printer_data/config/printer.cfg')
     p.add_argument('--socket', type=Path, default=Path.home() / 'printer_data/comms/klippy.sock')
@@ -517,10 +661,23 @@ def main():
         nozzle_count = a.nozzle_count or 'single'
         install_selected_profile = not a.keep_config and nozzle_count == 'single'
         plan = profile_plans[model] if install_selected_profile else current_config_plan()
+        guard_plan, guard_enabled, guard_reason = diag_guard_plan(
+            a.config, a.klipper, payload, plan, a.diag_guard)
+        xl_z_plan, xl_z_enabled = xl_z_probe_plan(
+            model, a.klipper, payload, install_selected_profile,
+            a.skip_xl_z_probe_module)
+        plan.update(guard_plan)
+        plan.update(xl_z_plan)
         plan.update(static_plan)
         print('Проверка комплекта Malevich Installer', INSTALLER_VERSION)
         print('Принтер: Designer', model, '| сопел:', '2' if nozzle_count == 'dual' else '1')
         print('Конфигурация:', 'профиль модели + macros.cfg' if install_selected_profile else 'текущий printer.cfg сохраняется')
+        print('DIAG Guard:', 'будет установлен (' + guard_reason + ')' if guard_enabled else 'пропущен (' + guard_reason + ')')
+        if model == 'XL' and install_selected_profile:
+            print('XL PB1 Z-homing: будет включён в xl_z_probe.cfg и macros.cfg (G28); host-модуль:', 'будет установлен' if xl_z_enabled else 'не выбран')
+            print('XL pin-map: board_pins.cfg (TMC_UART=PB10, TMC_DIAG1=PE15, TMC_BANK=PC3); printer.cfg (diag_pin: ^TMC_DIAG1); xl_z_probe.cfg (PB1/PA0)')
+        else:
+            print('XL PB1 host-модуль:', 'будет скопирован; конфигурация сохранится без изменений' if xl_z_enabled else 'не выбран')
         print('Klipper SHA256:', FIRMWARE_SHA_BY_MODEL[model])
         print('Файлов в плане:', len(plan))
         if isinstance(plan, InstallPlan) and plan.backup_paths:
@@ -663,7 +820,8 @@ def main():
         if printer_model == 'XL' and install_selected_profile and not a.check:
             print('XL-профиль включает select_pins на PC3. В исходном XL-файле 4 Z-адреса, а AutoDetect v0.6 проверяет 3 адреса второго банка.')
             print('Нагреватели XL установлены на watermark до индивидуальной PID-калибровки; перед печатью выполните PID_CALIBRATE для extruder и heater_bed.')
-            if not ask_yes_no('Продолжить с этим проверочным XL-профилем и сверить результат после перезапуска?', False):
+            print('PB1 Z-probe и G28 включены: порог 1493 mV и предел поиска 618 mm откалиброваны для проверенного экземпляра XL.')
+            if not ask_yes_no('Продолжить с XL-профилем, PB1 Z-homing и макросом G28?', True):
                 install_selected_profile = False
                 print('XL-конфиг сохранён без замены; установятся прошивка и панель.')
 
@@ -672,6 +830,11 @@ def main():
             raise ValueError('Контрольная сумма BIN не совпала')
         selected_plan = (profile_plans[printer_model] if install_selected_profile
                          else current_config_plan())
+        guard_plan, guard_enabled, guard_reason = diag_guard_plan(
+            a.config, a.klipper, payload, selected_plan, a.diag_guard)
+        xl_z_plan, xl_z_enabled = xl_z_probe_plan(
+            printer_model, a.klipper, payload, install_selected_profile,
+            a.skip_xl_z_probe_module)
         cfg_backup_paths = (selected_plan.backup_paths
                             if isinstance(selected_plan, InstallPlan) else set())
         cfg_backup_moves = {
@@ -680,11 +843,20 @@ def main():
             if path.exists()
         }
         planned = dict(selected_plan)
+        planned.update(guard_plan)
+        planned.update(xl_z_plan)
         planned.update(static_plan)
         print('Принтер: Designer', printer_model, '| AutoDetect:', detected_printer or 'пропущен',
               '| сопел:', '2' if nozzle_count == 'dual' else '1')
         print('Klipper BIN SHA256:', FIRMWARE_SHA_BY_MODEL[printer_model])
         print('Конфигурация:', 'профиль модели + отдельный macros.cfg' if install_selected_profile else 'текущий printer.cfg сохраняется')
+        print('DIAG Guard:', 'установлен (' + guard_reason + ')' if guard_enabled else 'пропущен (' + guard_reason + ')')
+        if printer_model == 'XL' and install_selected_profile:
+            print('XL PB1 Z-homing: активны xl_z_probe.cfg и G28 в macros.cfg; host-модуль установлен')
+            print('XL pin-map: board_pins.cfg (TMC_UART=PB10, TMC_DIAG1=PE15, TMC_BANK=PC3); printer.cfg (diag_pin: ^TMC_DIAG1); xl_z_probe.cfg (PB1/PA0)')
+        else:
+            print('XL PB1 host-модуль:', 'скопирован; конфигурация сохранена без изменений' if xl_z_enabled else 'не выбран')
+        print('Klipper бинарник: Malevich v0.2.0; DIAG Guard и Z-модуль меняют только host-файлы')
         print('Панель: полный комплект устанавливается в', Path.home() / 'panel')
         print('USB накопитель LCD: линии PB14/PB15 известны, стек host/MSC не включён')
         if cfg_backup_moves:
@@ -706,6 +878,9 @@ def main():
             'selected_model': printer_model,
             'nozzle_count': nozzle_count,
             'profile_installed': install_selected_profile,
+            'diag_guard_installed': guard_enabled,
+            'xl_z_probe_module_installed': xl_z_enabled,
+            'xl_z_probe_profile_active': printer_model == 'XL' and install_selected_profile,
             'installer_version': INSTALLER_VERSION,
         }, indent=2))
         print('Резервные копии и журнал:', backup, flush=True)
