@@ -4,7 +4,8 @@
 
 - `printer.cfg` — оси, нагреватели и периферия;
 - `board_pins.cfg` — карта платы и линии LCD USB;
-- `macros.cfg` — макросы и homing override;
+- `macros.cfg` — макросы и двухэтапный `G28` для PB1 Z-probe;
+- `xl_z_probe.cfg` — PB1 Z-probe и границы bed mesh;
 - `firmware/designer_xl/klipper.bin` — отдельный путь для образа XL.
 
 Для запуска XL-профиль временно использует `watermark` для экструдера (`max_delta: 1.0`) и стола (`max_delta: 2.0`), так как PID-калибровок XL пока нет. Перед печатью выполните `PID_CALIBRATE` отдельно для `extruder` и `heater_bed`, затем `SAVE_CONFIG`.
@@ -34,9 +35,15 @@ Z; Guard проверяет X/Y/E и не меняет Z. Для другого 
 Guard устанавливается в Klipper host Python/config и не меняет STM32 BIN: профиль
 продолжает использовать Malevich v0.2.0.
 
-При выборе XL автоустановщик также копирует host-файл `malevich_xl_z_probe.py`.
-Он остаётся неактивным, пока в пользовательском конфиге нет `[malevich_xl_z_probe]`;
-установщик не переносит примеры G28 и калибровочные пороги в конфиг. Для работы
-нужен установленный host `trigger_analog.py`, а примеры порогов и хода нужно
-перекалибровать под свою механику. Отключить копирование можно параметром
-`--skip-xl-z-probe-module`. Новая прошивка MCU для него не собирается и не ставится.
+При установке XL-профиля активируются `xl_z_probe.cfg` и макрос `G28` из
+`macros.cfg`; установщик копирует `malevich_xl_z_probe.py` и до прошивки проверяет
+наличие Klipper host-файла `trigger_analog.py`. Профиль указывает `sensor_pin: PB1`,
+`supply_pin: PA0`, `threshold_mv: 1493` и верхний ход поиска 618 mm — это калибровка
+проверенного экземпляра XL. `--keep-config` оставляет пользовательские конфиги и
+макросы активными без изменений. `--skip-xl-z-probe-module` применим только при
+сохранении текущего конфига. MCU BIN остаётся Malevich v0.2.0.
+
+Пины DIAG не скрыты в Python: XL aliases находятся в `board_pins.cfg`
+(`TMC_DIAG1=PE15`, `TMC_UART=PB10`, `TMC_BANK=PC3`), назначения `diag_pin` и
+`select_pins` — в соответствующих секциях `printer.cfg`. DIAG Guard берёт их из
+Klipper-конфига. У Z-драйверов `diag_pin` не задаётся: Z использует PB1 probe.

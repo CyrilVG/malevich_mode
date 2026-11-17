@@ -45,10 +45,11 @@ wget --https-only --timeout=30 --tries=3 -qO "$work/profiles/designer_x/macros.c
 wget --https-only --timeout=30 --tries=3 -qO "$work/profiles/designer_xl/printer.cfg" "$base/profiles/designer_xl/printer.cfg"
 wget --https-only --timeout=30 --tries=3 -qO "$work/profiles/designer_xl/board_pins.cfg" "$base/profiles/designer_xl/board_pins.cfg"
 wget --https-only --timeout=30 --tries=3 -qO "$work/profiles/designer_xl/macros.cfg" "$base/profiles/designer_xl/macros.cfg"
+wget --https-only --timeout=30 --tries=3 -qO "$work/profiles/designer_xl/xl_z_probe.cfg" "$base/profiles/designer_xl/xl_z_probe.cfg"
 (
     cd "$work"
     sha256sum -c <<'CHECKSUMS'
-5b125e5ea339547109981f3f9acdcf2b28d7e90f23f39e8fb7cf73ba6386d12b  installer/setup.py
+316d8524507a42b58061d20265085468d6b8530a6b6565e57cfaef0a58fe9afc  installer/setup.py
 e8d09934aa45e5038d5b73821ebfcb6112376663e638cccc206acc3c92e386cc  installer/restore.py
 6326e5d45220b6177c8a6d48cdfea1a7d7b65ad995d9af2b44480fac58da1657  installer/autodetect.py
 a0d4a8e6ed22daac28582c19cbca850025ea0aa53981ab4b0ff4db91f1437299  firmware/autodetect/autodetect.bin.b64
@@ -70,9 +71,10 @@ b0c5fc1075a218bc4ef4a5e56be4815e71216729f51e34751afc00e83fa3800c  panel/tests/st
 c4f51641fcd4df555611db054ba70ff429fc5daa8e365bf4d5473ef1a23fade7  profiles/designer_x/printer.cfg
 a950e13753e4dd67864218a463479800f5247a1df84b47580150c8c474f77eae  profiles/designer_x/board_pins.cfg
 f94a14b2baad3b2b51d73adb2a220979f58b17894931c88cd20994576ecc3dc5  profiles/designer_x/macros.cfg
-eccbffd49b6ed0981a5247606a92341985ae0838f2f564d523c4582e5ea0885d  profiles/designer_xl/printer.cfg
+a9ee5fe882850d90d702a89b320888c8e6cf1e3061b49c975cd3f2dc1423b807  profiles/designer_xl/printer.cfg
 10dee91457082cc9b2ac92551f95c2f24811500d1c5b22a07a164671162c9b11  profiles/designer_xl/board_pins.cfg
-a4f14ea3b9099179776b98fb125ef48f34aaea8e8aac4152d6cc5f1897c6a7b6  profiles/designer_xl/macros.cfg
+ee64d0db939a93818bc9080fa3ea5c4d2b8ffc5acd3464af906b891ba3b4fbac  profiles/designer_xl/macros.cfg
+edd05277cd3e2c716db5a2a70f024a246dc343e5f66bd33fe352b4c2e5650fce  profiles/designer_xl/xl_z_probe.cfg
 5b685d4a961e019ac90c2a87b5b634af78521e4e6210c9fa32abf844f31955fe  installer/diag_guard/__init__.py
 fcda4ecd1bc2ea2a5de35a1e438e38f051a1c0f5954ef46b65c29f398aea2b67  installer/diag_guard/patch_homing.py
 036ed8519cd685f6cd83b3821f62d6b4e4fdcb1dc13209715fd587f3b0dfa26c  installer/diag_guard/malevich_diag_guard.py

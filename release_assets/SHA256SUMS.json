@@ -2,5 +2,9 @@
   "malevich_xl_7x2209_release_rc2.zip": {
     "sha256": "1b519c18c286d144cd102616a671a21cfb8f64f9a920294274908bc9c9411670",
     "size_bytes": 69422
+  },
+  "malevich_xl_7x2209_release_rc3.zip": {
+    "sha256": "4b62794fcc594912878d4f42ffb7f2930a7863959ed9711e576c47233e4af121",
+    "size_bytes": 76072
   }
 }

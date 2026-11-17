@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from autodetect import DetectionError, parse_model, scan_printer
 from diag_guard.patch_homing import patch_homing
 
-INSTALLER_VERSION = '0.3.5'
+INSTALLER_VERSION = '0.3.6'
 FIRMWARE_SHA_BY_MODEL = {
     'X': '4704cc2d51ad55adbc388a45e8795644ef4992acdf39cbecdcf11c52bdf8fbb5',
     # Klipper's bank selection is a host config feature, so these model-specific
@@ -228,7 +228,11 @@ def install_profile(config, serial, gcodes, payload, model):
     profile = profile_dir / 'printer.cfg'
     pins = profile_dir / 'board_pins.cfg'
     macros = profile_dir / 'macros.cfg'
-    if not all(path.is_file() for path in (profile, pins, macros)):
+    xl_z_cfg = profile_dir / 'xl_z_probe.cfg'
+    required_profile_files = (profile, pins, macros)
+    if model == 'XL':
+        required_profile_files += (xl_z_cfg,)
+    if not all(path.is_file() for path in required_profile_files):
         raise ValueError('В комплекте отсутствует полный профиль Designer ' + model)
     cfg = profile.read_text()
     if cfg.count('@MCU_SERIAL@') != 1:
@@ -236,6 +240,22 @@ def install_profile(config, serial, gcodes, payload, model):
     for required_include in ('[include fluidd.cfg]', '[include board_pins.cfg]', '[include macros.cfg]'):
         if required_include not in cfg:
             raise ValueError('Профиль Designer ' + model + ' должен подключать ' + required_include)
+    if model == 'XL' and '[include xl_z_probe.cfg]' not in cfg:
+        raise ValueError('Профиль Designer XL должен подключать [include xl_z_probe.cfg]')
+    if model == 'XL':
+        macro_text = macros.read_text()
+        probe_text = xl_z_cfg.read_text()
+        if not any(name == 'gcode_macro G28' for name, _, _ in sections(macro_text)):
+            raise ValueError('Профиль Designer XL должен включать макрос [gcode_macro G28]')
+        if not any(name == 'malevich_xl_z_probe' for name, _, _ in sections(probe_text)):
+            raise ValueError('В xl_z_probe.cfg отсутствует [malevich_xl_z_probe]')
+        z_block = next((probe_text[start:end] for name, start, end in sections(probe_text)
+                        if name == 'malevich_xl_z_probe'), '')
+        if not re.search(r'(?mi)^\s*sensor_pin\s*[:=]\s*PB1\s*$', z_block):
+            raise ValueError('Профиль Designer XL ожидает PB1 для Z-probe')
+        if not re.search(r'(?mi)^\s*endstop_pin\s*[:=]\s*malevich_xl_z_probe:virtual_endstop\s*$',
+                         cfg):
+            raise ValueError('Профиль Designer XL должен использовать PB1 virtual_endstop для Z')
     cfg = cfg.replace('@MCU_SERIAL@', serial)
     cfg = cfg.replace('@GCODE_PATH@', str(gcodes))
     cfg = cfg.replace('/home/pi/printer_data/gcodes', str(gcodes))
@@ -282,6 +302,8 @@ def install_profile(config, serial, gcodes, payload, model):
         board_pins_path: pins.read_text(),
         macros_path: macros.read_text(),
     }
+    if model == 'XL':
+        planned[(config_dir / 'xl_z_probe.cfg').resolve()] = xl_z_cfg.read_text()
     # Inspect the complete include tree, but preserve the source files before
     # removing any section that duplicates this profile.
     files = load_configs(config, planned)
@@ -302,7 +324,8 @@ def install_profile(config, serial, gcodes, payload, model):
         for name, start, end in sections(text):
             if name.startswith('include '):
                 continue
-            if name in owned_sections or name in external_seen or name in local_seen:
+            if (name in owned_sections or name in external_seen or name in local_seen
+                    or (model == 'XL' and name == 'homing_override')):
                 conflicts.append((start, end))
             else:
                 local_seen.add(name)
@@ -376,9 +399,14 @@ def ensure_guard_include(text):
         pos = len(text)
     return text[:pos].rstrip() + '\n\n[include malevich_diag_guard.cfg]\n' + text[pos:]
 
-def xl_z_probe_plan(printer_model, klipper, payload, skip_module=False):
-    """Stage the XL PB1 host module without activating machine-specific config."""
-    if printer_model != 'XL' or skip_module:
+def xl_z_probe_plan(printer_model, klipper, payload, profile_active=False,
+                    skip_module=False):
+    """Stage the PB1 host module when the XL profile activates its config."""
+    if printer_model != 'XL':
+        return {}, False
+    if skip_module:
+        if profile_active:
+            raise ValueError('--skip-xl-z-probe-module нельзя использовать с активным XL-профилем: он включает xl_z_probe.cfg и G28')
         return {}, False
     source = payload / 'installer/xl_addons/malevich_xl_z_probe.py'
     if not source.is_file():
@@ -391,6 +419,10 @@ def xl_z_probe_plan(printer_model, klipper, payload, skip_module=False):
                    '# XL_TWO_STAGE_Z_HOME_V1')
         if not all(marker in existing for marker in markers):
             raise ValueError('Найден другой malevich_xl_z_probe.py; он сохранён. Удалите его вручную или пропустите модуль через --skip-xl-z-probe-module.')
+    if profile_active:
+        trigger_analog = (klipper / 'klippy/extras/trigger_analog.py').resolve()
+        if not trigger_analog.is_file():
+            raise ValueError('XL-профиль включает PB1 Z-homing, но не найден host-файл ' + str(trigger_analog) + '. Установите совместимый trigger_analog.py для Klipper v0.2.0; прошивка MCU при этом не меняется.')
     return {destination: source.read_text()}, True
 
 def diag_guard_plan(config, klipper, payload, staged, mode):
@@ -507,7 +539,7 @@ def main():
     config_group.add_argument('--install-x-config', dest='install_profile', action='store_true', help=argparse.SUPPRESS)
     config_group.add_argument('--keep-config', action='store_true', help='Оставить текущий printer.cfg и обновить только MCU/панель')
     p.add_argument('--diag-guard', choices=['auto','on','off'], default='auto', help='DIAG Guard: auto по фактическим TMC2209 X/Y/E и pin-конфигу (по умолчанию), on или off')
-    p.add_argument('--skip-xl-z-probe-module', action='store_true', help='Не копировать host-модуль PB1 Z-probe при выборе XL; его конфиг и макросы автоматически не включаются')
+    p.add_argument('--skip-xl-z-probe-module', action='store_true', help='Не копировать PB1 Z-probe для XL; доступно только при сохранении текущего конфига')
     p.add_argument('--klipper', type=Path, default=Path.home() / 'klipper')
     p.add_argument('--config', type=Path, default=Path.home() / 'printer_data/config/printer.cfg')
     p.add_argument('--socket', type=Path, default=Path.home() / 'printer_data/comms/klippy.sock')
@@ -632,7 +664,8 @@ def main():
         guard_plan, guard_enabled, guard_reason = diag_guard_plan(
             a.config, a.klipper, payload, plan, a.diag_guard)
         xl_z_plan, xl_z_enabled = xl_z_probe_plan(
-            model, a.klipper, payload, a.skip_xl_z_probe_module)
+            model, a.klipper, payload, install_selected_profile,
+            a.skip_xl_z_probe_module)
         plan.update(guard_plan)
         plan.update(xl_z_plan)
         plan.update(static_plan)
@@ -640,7 +673,11 @@ def main():
         print('Принтер: Designer', model, '| сопел:', '2' if nozzle_count == 'dual' else '1')
         print('Конфигурация:', 'профиль модели + macros.cfg' if install_selected_profile else 'текущий printer.cfg сохраняется')
         print('DIAG Guard:', 'будет установлен (' + guard_reason + ')' if guard_enabled else 'пропущен (' + guard_reason + ')')
-        print('XL PB1 host-модуль:', 'будет скопирован; без активации config/macro' if xl_z_enabled else 'не выбран')
+        if model == 'XL' and install_selected_profile:
+            print('XL PB1 Z-homing: будет включён в xl_z_probe.cfg и macros.cfg (G28); host-модуль:', 'будет установлен' if xl_z_enabled else 'не выбран')
+            print('XL pin-map: board_pins.cfg (TMC_UART=PB10, TMC_DIAG1=PE15, TMC_BANK=PC3); printer.cfg (diag_pin: ^TMC_DIAG1); xl_z_probe.cfg (PB1/PA0)')
+        else:
+            print('XL PB1 host-модуль:', 'будет скопирован; конфигурация сохранится без изменений' if xl_z_enabled else 'не выбран')
         print('Klipper SHA256:', FIRMWARE_SHA_BY_MODEL[model])
         print('Файлов в плане:', len(plan))
         if isinstance(plan, InstallPlan) and plan.backup_paths:
@@ -783,7 +820,8 @@ def main():
         if printer_model == 'XL' and install_selected_profile and not a.check:
             print('XL-профиль включает select_pins на PC3. В исходном XL-файле 4 Z-адреса, а AutoDetect v0.6 проверяет 3 адреса второго банка.')
             print('Нагреватели XL установлены на watermark до индивидуальной PID-калибровки; перед печатью выполните PID_CALIBRATE для extruder и heater_bed.')
-            if not ask_yes_no('Продолжить с этим проверочным XL-профилем и сверить результат после перезапуска?', False):
+            print('PB1 Z-probe и G28 включены: порог 1493 mV и предел поиска 618 mm откалиброваны для проверенного экземпляра XL.')
+            if not ask_yes_no('Продолжить с XL-профилем, PB1 Z-homing и макросом G28?', True):
                 install_selected_profile = False
                 print('XL-конфиг сохранён без замены; установятся прошивка и панель.')
 
@@ -795,7 +833,8 @@ def main():
         guard_plan, guard_enabled, guard_reason = diag_guard_plan(
             a.config, a.klipper, payload, selected_plan, a.diag_guard)
         xl_z_plan, xl_z_enabled = xl_z_probe_plan(
-            printer_model, a.klipper, payload, a.skip_xl_z_probe_module)
+            printer_model, a.klipper, payload, install_selected_profile,
+            a.skip_xl_z_probe_module)
         cfg_backup_paths = (selected_plan.backup_paths
                             if isinstance(selected_plan, InstallPlan) else set())
         cfg_backup_moves = {
@@ -812,7 +851,11 @@ def main():
         print('Klipper BIN SHA256:', FIRMWARE_SHA_BY_MODEL[printer_model])
         print('Конфигурация:', 'профиль модели + отдельный macros.cfg' if install_selected_profile else 'текущий printer.cfg сохраняется')
         print('DIAG Guard:', 'установлен (' + guard_reason + ')' if guard_enabled else 'пропущен (' + guard_reason + ')')
-        print('XL PB1 host-модуль:', 'скопирован без активации config/macro' if xl_z_enabled else 'не выбран')
+        if printer_model == 'XL' and install_selected_profile:
+            print('XL PB1 Z-homing: активны xl_z_probe.cfg и G28 в macros.cfg; host-модуль установлен')
+            print('XL pin-map: board_pins.cfg (TMC_UART=PB10, TMC_DIAG1=PE15, TMC_BANK=PC3); printer.cfg (diag_pin: ^TMC_DIAG1); xl_z_probe.cfg (PB1/PA0)')
+        else:
+            print('XL PB1 host-модуль:', 'скопирован; конфигурация сохранена без изменений' if xl_z_enabled else 'не выбран')
         print('Klipper бинарник: Malevich v0.2.0; DIAG Guard и Z-модуль меняют только host-файлы')
         print('Панель: полный комплект устанавливается в', Path.home() / 'panel')
         print('USB накопитель LCD: линии PB14/PB15 известны, стек host/MSC не включён')
@@ -837,6 +880,7 @@ def main():
             'profile_installed': install_selected_profile,
             'diag_guard_installed': guard_enabled,
             'xl_z_probe_module_installed': xl_z_enabled,
+            'xl_z_probe_profile_active': printer_model == 'XL' and install_selected_profile,
             'installer_version': INSTALLER_VERSION,
         }, indent=2))
         print('Резервные копии и журнал:', backup, flush=True)

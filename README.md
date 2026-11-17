@@ -28,7 +28,7 @@
 
 ### Установка одной командой на Raspberry Pi
 
-Установщик для Klipper на Raspberry Pi 3/4/5 сначала запускает AutoDetect v0.6.0, затем предлагает выбрать Designer X или XL с подсказкой найденной модели. Профили X и XL разделены; XL переключает банки драйверов через штатный `select_pins` Klipper. При совместимой конфигурации TMC2209 X/Y/E и sensorless pin-map установщик добавляет host-side DIAG Guard. Для XL он также копирует host-модуль PB1 Z-probe, не включая его конфиг и макросы. Ни одно дополнение не меняет MCU BIN v0.2.0. Для двух сопел скрипт спросит вариант и сохранит текущий конфиг, пока отдельный профиль не проверен.
+Установщик для Klipper на Raspberry Pi 3/4/5 сначала запускает AutoDetect v0.6.0, затем предлагает выбрать Designer X или XL с подсказкой найденной модели. Профили X и XL разделены; XL переключает банки драйверов через штатный `select_pins` Klipper. При совместимой конфигурации TMC2209 X/Y/E и sensorless pin-map установщик добавляет host-side DIAG Guard. При установке профиля XL вместе устанавливаются PB1 Z-probe, `G28` и конфигурация bed mesh. Для Z нужен установленный host-файл `trigger_analog.py`; установщик проверяет его до прошивки. Пины перечислены в `board_pins.cfg`, `printer.cfg` и `xl_z_probe.cfg`, Python-модуль их не назначает. Все дополнения используют MCU BIN Malevich v0.2.0 без изменений. Для двух сопел скрипт сохраняет текущую конфигурацию, пока отдельный профиль не готов.
 
 ```bash
 bash <(wget -qO- https://raw.githubusercontent.com/CyrilVG/malevich_mode/main/install.sh)
@@ -40,7 +40,7 @@ bash <(wget -qO- https://raw.githubusercontent.com/CyrilVG/malevich_mode/main/in
 
 [Подробности, распиновка, параметры и откат](installer/README.md)
 
-[Предрелизный пакет XL с 7 драйверами TMC2209](release_assets/malevich_xl_7x2209_release_rc2.zip)
+[Предрелизный пакет XL с 7 драйверами TMC2209](release_assets/malevich_xl_7x2209_release_rc3.zip)
 
 **malevich_mode** — адаптация [Klipper](https://github.com/Klipper3d/klipper) для платы на STM32F407 с заводским USB-UART FT232R. Репозиторий содержит установщик, прошивку и wiki с инструкциями по ручной прошивке.
 
@@ -75,7 +75,7 @@ GitHub Actions собирает и проверяет прошивку STM32F407
 
 ### One-command Raspberry Pi installation
 
-For Klipper on Raspberry Pi 3/4/5, the installer first runs AutoDetect v0.6.0, then offers Designer X or XL with the detected model preselected. X and XL use separate profiles; XL bank selection uses Klipper's built-in `select_pins`. When configured TMC2209 X/Y/E and sensorless pin mappings match, it adds the host-side DIAG Guard. For XL it also stages the PB1 Z-probe host module without enabling its config or macros. Both additions leave the MCU v0.2.0 binary unchanged. The installer asks whether the printer has one or two nozzles and preserves the current config for two-nozzle machines until a validated profile is available.
+For Klipper on Raspberry Pi 3/4/5, the installer first runs AutoDetect v0.6.0, then offers Designer X or XL with the detected model preselected. X and XL use separate profiles; XL bank selection uses Klipper's built-in `select_pins`. When configured TMC2209 X/Y/E and sensorless pin mappings match, it adds the host-side DIAG Guard. Installing the XL profile also activates the PB1 Z probe, the XL `G28` sequence, and bed mesh settings. Z homing requires the existing host `trigger_analog.py`; the installer checks for it before flashing. Pin mappings are visible in `board_pins.cfg`, `printer.cfg`, and `xl_z_probe.cfg`; Python does not assign GPIO pins. The MCU v0.2.0 binary remains unchanged. Two-nozzle machines keep their current config until a profile is ready.
 
 ```bash
 bash <(wget -qO- https://raw.githubusercontent.com/CyrilVG/malevich_mode/main/install.sh)
@@ -87,7 +87,7 @@ The selected profile keeps macros in a separate `macros.cfg`; the installer back
 
 [Details, pinout, options and rollback](installer/README.md).
 
-[XL 7×TMC2209 release candidate bundle](release_assets/malevich_xl_7x2209_release_rc2.zip)
+[XL 7×TMC2209 release candidate bundle](release_assets/malevich_xl_7x2209_release_rc3.zip)
 
 **malevich_mode** adapts [Klipper](https://github.com/Klipper3d/klipper) to a custom STM32F407 board with an on-board FT232R USB-to-serial adapter. This repository provides the installer, firmware, and a wiki for manual flashing.
 
