@@ -28,7 +28,7 @@
 
 ### Установка одной командой на Raspberry Pi
 
-Установщик для Klipper на Raspberry Pi 3/4/5 сначала запускает AutoDetect v0.6.0, затем предлагает выбрать Designer X или XL с подсказкой найденной модели. Профили X и XL разделены; XL переключает банки драйверов через штатный `select_pins` Klipper. Для двух сопел скрипт спросит вариант и сохранит текущий конфиг, пока отдельный профиль не проверен.
+Установщик для Klipper на Raspberry Pi 3/4/5 сначала запускает AutoDetect v0.6.0, затем предлагает выбрать Designer X или XL с подсказкой найденной модели. Профили X и XL разделены; XL переключает банки драйверов через штатный `select_pins` Klipper. При совместимой конфигурации TMC2209 X/Y/E и sensorless pin-map установщик добавляет host-side DIAG Guard. Для XL он также копирует host-модуль PB1 Z-probe, не включая его конфиг и макросы. Ни одно дополнение не меняет MCU BIN v0.2.0. Для двух сопел скрипт спросит вариант и сохранит текущий конфиг, пока отдельный профиль не проверен.
 
 ```bash
 bash <(wget -qO- https://raw.githubusercontent.com/CyrilVG/malevich_mode/main/install.sh)
@@ -39,6 +39,8 @@ bash <(wget -qO- https://raw.githubusercontent.com/CyrilVG/malevich_mode/main/in
 Выбранный профиль раскладывает макросы в отдельный `macros.cfg`; перед записью сохраняются файлы и полный дамп flash. Используйте `--keep-config`, чтобы оставить активный конфиг, или `--check --printer-model X|XL`, чтобы проверить комплект без прошивки. USB Host/MSC для флешек через разъём LCD пока не реализован.
 
 [Подробности, распиновка, параметры и откат](installer/README.md)
+
+[Предрелизный пакет XL с 7 драйверами TMC2209](release_assets/malevich_xl_7x2209_release_rc2.zip)
 
 **malevich_mode** — адаптация [Klipper](https://github.com/Klipper3d/klipper) для платы на STM32F407 с заводским USB-UART FT232R. Репозиторий содержит установщик, прошивку и wiki с инструкциями по ручной прошивке.
 
@@ -73,7 +75,7 @@ GitHub Actions собирает и проверяет прошивку STM32F407
 
 ### One-command Raspberry Pi installation
 
-For Klipper on Raspberry Pi 3/4/5, the installer first runs AutoDetect v0.6.0, then offers Designer X or XL with the detected model preselected. X and XL use separate profiles; XL bank selection uses Klipper's built-in `select_pins`. The installer asks whether the printer has one or two nozzles and preserves the current config for two-nozzle machines until a validated profile is available.
+For Klipper on Raspberry Pi 3/4/5, the installer first runs AutoDetect v0.6.0, then offers Designer X or XL with the detected model preselected. X and XL use separate profiles; XL bank selection uses Klipper's built-in `select_pins`. When configured TMC2209 X/Y/E and sensorless pin mappings match, it adds the host-side DIAG Guard. For XL it also stages the PB1 Z-probe host module without enabling its config or macros. Both additions leave the MCU v0.2.0 binary unchanged. The installer asks whether the printer has one or two nozzles and preserves the current config for two-nozzle machines until a validated profile is available.
 
 ```bash
 bash <(wget -qO- https://raw.githubusercontent.com/CyrilVG/malevich_mode/main/install.sh)
@@ -84,6 +86,8 @@ Connect SWD using the verified Raspberry Pi pinout, keep VCC separate, and disab
 The selected profile keeps macros in a separate `macros.cfg`; the installer backs up config files and the complete flash before writing. Use `--keep-config` to preserve the current printer config, or `--check --printer-model X|XL` to validate the bundle without flashing. USB Host/MSC support for the LCD connector is not implemented yet.
 
 [Details, pinout, options and rollback](installer/README.md).
+
+[XL 7×TMC2209 release candidate bundle](release_assets/malevich_xl_7x2209_release_rc2.zip)
 
 **malevich_mode** adapts [Klipper](https://github.com/Klipper3d/klipper) to a custom STM32F407 board with an on-board FT232R USB-to-serial adapter. This repository provides the installer, firmware, and a wiki for manual flashing.
 
@@ -113,3 +117,4 @@ For programming v0.2.0 with a separate adapter, download the BIN from [Releases]
 ### CI and licensing
 
 GitHub Actions builds and checks STM32F407 + UART5 firmware. Versioned downloads are published under Releases. A passing build does not replace testing each new version on hardware. Klipper is licensed under GPLv3.
+

@@ -13,13 +13,18 @@ trap 'rm -rf -- "$work"' EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 base="https://raw.githubusercontent.com/CyrilVG/malevich_mode/main"
-mkdir -p "$work/installer" "$work/firmware/autodetect" \
+mkdir -p "$work/installer/diag_guard" "$work/installer/xl_addons" "$work/firmware/autodetect" \
     "$work/firmware/designer_x" "$work/firmware/designer_xl" \
     "$work/profiles/designer_x" "$work/profiles/designer_xl"
 echo 'Загружаю проверенный комплект Malevich…'
 wget --https-only --timeout=30 --tries=3 -qO "$work/installer/setup.py" "$base/installer/setup.py"
 wget --https-only --timeout=30 --tries=3 -qO "$work/installer/restore.py" "$base/installer/restore.py"
 wget --https-only --timeout=30 --tries=3 -qO "$work/installer/autodetect.py" "$base/installer/autodetect.py"
+wget --https-only --timeout=30 --tries=3 -qO "$work/installer/diag_guard/__init__.py" "$base/installer/diag_guard/__init__.py"
+wget --https-only --timeout=30 --tries=3 -qO "$work/installer/diag_guard/patch_homing.py" "$base/installer/diag_guard/patch_homing.py"
+wget --https-only --timeout=30 --tries=3 -qO "$work/installer/diag_guard/malevich_diag_guard.py" "$base/installer/diag_guard/malevich_diag_guard.py"
+wget --https-only --timeout=30 --tries=3 -qO "$work/installer/diag_guard/malevich_diag_guard.cfg" "$base/installer/diag_guard/malevich_diag_guard.cfg"
+wget --https-only --timeout=30 --tries=3 -qO "$work/installer/xl_addons/malevich_xl_z_probe.py" "$base/installer/xl_addons/malevich_xl_z_probe.py"
 wget --https-only --timeout=30 --tries=3 -qO "$work/firmware/autodetect/autodetect.bin.b64" "$base/firmware/autodetect/autodetect.bin.b64"
 wget --https-only --timeout=30 --tries=3 -qO "$work/firmware/designer_x/klipper.bin.b64" "$base/firmware/designer_x/klipper.bin.b64"
 wget --https-only --timeout=30 --tries=3 -qO "$work/firmware/designer_xl/klipper.bin.b64" "$base/firmware/designer_xl/klipper.bin.b64"
@@ -43,7 +48,7 @@ wget --https-only --timeout=30 --tries=3 -qO "$work/profiles/designer_xl/macros.
 (
     cd "$work"
     sha256sum -c <<'CHECKSUMS'
-e95546b664b998c17761d26e89e0bcc78bd3726f1027b42a6826fcbb7dbdef41  installer/setup.py
+5b125e5ea339547109981f3f9acdcf2b28d7e90f23f39e8fb7cf73ba6386d12b  installer/setup.py
 e8d09934aa45e5038d5b73821ebfcb6112376663e638cccc206acc3c92e386cc  installer/restore.py
 6326e5d45220b6177c8a6d48cdfea1a7d7b65ad995d9af2b44480fac58da1657  installer/autodetect.py
 a0d4a8e6ed22daac28582c19cbca850025ea0aa53981ab4b0ff4db91f1437299  firmware/autodetect/autodetect.bin.b64
@@ -68,6 +73,11 @@ f94a14b2baad3b2b51d73adb2a220979f58b17894931c88cd20994576ecc3dc5  profiles/desig
 eccbffd49b6ed0981a5247606a92341985ae0838f2f564d523c4582e5ea0885d  profiles/designer_xl/printer.cfg
 10dee91457082cc9b2ac92551f95c2f24811500d1c5b22a07a164671162c9b11  profiles/designer_xl/board_pins.cfg
 a4f14ea3b9099179776b98fb125ef48f34aaea8e8aac4152d6cc5f1897c6a7b6  profiles/designer_xl/macros.cfg
+5b685d4a961e019ac90c2a87b5b634af78521e4e6210c9fa32abf844f31955fe  installer/diag_guard/__init__.py
+fcda4ecd1bc2ea2a5de35a1e438e38f051a1c0f5954ef46b65c29f398aea2b67  installer/diag_guard/patch_homing.py
+036ed8519cd685f6cd83b3821f62d6b4e4fdcb1dc13209715fd587f3b0dfa26c  installer/diag_guard/malevich_diag_guard.py
+40202d0222b65dcab9e70e4fce8e558b00eb53122a2256f4b0d07201fdce958a  installer/diag_guard/malevich_diag_guard.cfg
+c979de718181b45d9ffa6ed8b01563aa418ccd17d76d7c4eda8e82d0d846a3fe  installer/xl_addons/malevich_xl_z_probe.py
 CHECKSUMS
 )
 python3 "$work/installer/setup.py" "$@"
