@@ -61,7 +61,8 @@ class ConfigTests(unittest.TestCase):
         with self.assertRaises(ValueError):self.plan()
     def test_model_profiles_split_macros_and_bank_select(self):
         payload = Path(__file__).resolve().parents[1]
-        (self.root / 'fluidd.cfg').write_text('')
+        fluidd = self.root / 'fluidd.cfg'
+        fluidd.write_text('[homing_override]\ngcode:\n  G28.1\n')
         for model in ('X', 'XL'):
             planned = s.install_profile(self.cfg, '/dev/serial/by-id/test',
                                         self.root/'gcodes', payload, model)
@@ -69,9 +70,17 @@ class ConfigTests(unittest.TestCase):
             self.assertIn('[include macros.cfg]', planned[self.cfg])
             self.assertNotRegex(planned[self.cfg], r'(?m)^\[gcode_macro ')
             self.assertIn('[gcode_macro ', planned[self.root/'macros.cfg'])
+            if model == 'XL':
+                self.assertIn('[include xl_z_probe.cfg]', planned[self.cfg])
+                self.assertIn('[gcode_macro G28]', planned[self.root/'macros.cfg'])
+                self.assertIn('[malevich_xl_z_probe]', planned[self.root/'xl_z_probe.cfg'])
+                self.assertIn('endstop_pin: malevich_xl_z_probe:virtual_endstop', planned[self.cfg])
+                self.assertNotIn('[homing_override]', planned[fluidd])
+                self.assertIn(fluidd, planned.backup_paths)
         xl = (payload/'profiles/designer_xl/printer.cfg').read_text()
-        self.assertEqual(xl.count('select_pins: PC3'), 3)
-        self.assertEqual(xl.count('select_pins: !PC3'), 4)
+        self.assertEqual(xl.count('select_pins: TMC_BANK'), 3)
+        self.assertEqual(xl.count('select_pins: !TMC_BANK'), 4)
+        self.assertEqual(xl.count('select_pins: PC3'), 0)
         self.assertIn('@GCODE_PATH@', xl)
     def test_firmware_hashes_and_detect_parse(self):
         payload = Path(__file__).resolve().parents[1]
